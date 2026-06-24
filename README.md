@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" />
 </p>
 
-<h1 align="center">BankPerformanceAggregator</h1>
+<h1 align="center">Bank Performance Aggregator</h1>
 
 <p align="center">
   A production-grade Laravel application for aggregating, validating, and analyzing<br/>
