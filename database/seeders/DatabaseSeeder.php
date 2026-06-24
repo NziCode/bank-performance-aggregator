@@ -12,6 +12,8 @@ class DatabaseSeeder extends Seeder
             ZoneSeeder::class,
             BranchSeeder::class,
             BranchOfficeSeeder::class,
+            StaffUnitSeeder::class,
+            UserSeeder::class,
         ]);
     }
 }
