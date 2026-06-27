@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
             BranchOfficeSeeder::class,
             StaffUnitSeeder::class,
             UserSeeder::class,
+            ServiceTypeSeeder::class,
         ]);
     }
 }
