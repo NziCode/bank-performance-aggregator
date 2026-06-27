@@ -49,8 +49,9 @@ class ExcelParserService
     private function getRowValues($sheet, int $rowIndex, int $colCount): array
     {
         $values = [];
-        for ($col = 0; $col < $colCount; $col++) {
-            $values[$col] = $sheet->getCellByColumnAndRow($col + 1, $rowIndex)->getValue();
+        for ($col = 1; $col <= $colCount; $col++) {
+            $coordinate = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $rowIndex;
+            $values[$col - 1] = $sheet->getCell($coordinate)->getValue();
         }
         return $values;
     }
