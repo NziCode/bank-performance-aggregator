@@ -15,6 +15,8 @@ class DatabaseSeeder extends Seeder
             StaffUnitSeeder::class,
             UserSeeder::class,
             ServiceTypeSeeder::class,
+            ValidationStatusSeeder::class,
+            RejectionReasonSeeder::class,
         ]);
     }
 }

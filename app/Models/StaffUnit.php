@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Zone extends Model
+class StaffUnit extends Model
 {
     protected $primaryKey = 'code';
     public $incrementing = false;
@@ -13,13 +13,8 @@ class Zone extends Model
 
     protected $fillable = ['code', 'name'];
 
-    public function branches(): HasMany
-    {
-        return $this->hasMany(Branch::class, 'zone_code', 'code');
-    }
-
     public function employees(): HasMany
     {
-        return $this->hasMany(User::class, 'zone_code', 'code');
+        return $this->hasMany(User::class, 'staff_unit_code', 'code');
     }
 }
