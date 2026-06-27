@@ -23,7 +23,7 @@ return new class extends Migration
                 'فوق لیسانس',
                 'دکترا',
             ])->nullable();
-            $table->enum('gender', ['مرد', 'زن'])->nullable();
+            $table->enum('gender', ['آقا', 'خانم'])->nullable();
             $table->string('password');
             $table->rememberToken();
 
