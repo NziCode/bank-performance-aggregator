@@ -4,20 +4,51 @@ namespace App\Http\Controllers;
 
 use App\Models\Performance;
 use App\Models\RejectionReason;
+use App\Models\ServiceType;
+use App\Models\ValidationStatus;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\View\View;
 
 class PerformanceController extends Controller
 {
-    // لیست عملکردها با فیلتر
-    public function index(Request $request): JsonResponse
+    // --- Web ---
+
+    public function webIndex(Request $request): View
     {
         $query = Performance::with([
             'employee',
             'branch',
             'serviceType',
             'validationStatus',
-            'rejectionReason',
+        ]);
+
+        if ($request->filled('status')) {
+            $query->where('validation_status_id', $request->status);
+        }
+
+        if ($request->filled('service_type_id')) {
+            $query->where('service_type_id', $request->service_type_id);
+        }
+
+        if ($request->filled('from') && $request->filled('to')) {
+            $query->forPeriod($request->from, $request->to);
+        }
+
+        $performances = $query->orderByDesc('date')->paginate(20);
+        $statuses     = ValidationStatus::all();
+        $serviceTypes = ServiceType::all();
+
+        return view('performances.index', compact('performances', 'statuses', 'serviceTypes'));
+    }
+
+    // --- API ---
+
+    public function index(Request $request): JsonResponse
+    {
+        $query = Performance::with([
+            'employee', 'branch', 'serviceType', 'validationStatus', 'rejectionReason',
         ]);
 
         if ($request->filled('status')) {
@@ -40,62 +71,49 @@ class PerformanceController extends Controller
             $query->forPeriod($request->from, $request->to);
         }
 
-        $performances = $query->orderByDesc('date')->paginate(20);
-
-        return response()->json($performances);
+        return response()->json($query->orderByDesc('date')->paginate(20));
     }
 
-    // تایید عملکرد
-    public function approve(Request $request, Performance $performance): JsonResponse
+    public function approve(Request $request, Performance $performance): RedirectResponse|JsonResponse
     {
-        if (! $performance->isPending()) {
-            return response()->json([
-                'message' => 'این عملکرد قبلاً بررسی شده است',
-            ], 422);
-        }
-
         $performance->update([
             'validation_status_id' => 2,
             'rejection_reason_id'  => null,
-            'validated_by'         => $request->user()->personnel_code,
+            'validated_by'         => auth()->id(),
             'validated_at'         => now(),
         ]);
 
-        return response()->json([
-            'message' => 'عملکرد با موفقیت تایید شد',
-        ]);
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'تایید شد']);
+        }
+
+        return back()->with('success', 'عملکرد تایید شد');
     }
 
-    // رد عملکرد
-    public function reject(Request $request, Performance $performance): JsonResponse
+    public function reject(Request $request, Performance $performance): RedirectResponse|JsonResponse
     {
         $request->validate([
             'rejection_reason_id' => ['required', 'exists:rejection_reasons,id'],
         ]);
 
-        if (! $performance->isPending()) {
-            return response()->json([
-                'message' => 'این عملکرد قبلاً بررسی شده است',
-            ], 422);
-        }
-
         $performance->update([
             'validation_status_id' => 3,
             'rejection_reason_id'  => $request->rejection_reason_id,
-            'validated_by'         => $request->user()->personnel_code,
+            'validated_by'         => auth()->id(),
             'validated_at'         => now(),
         ]);
 
-        return response()->json([
-            'message' => 'عملکرد رد شد',
-        ]);
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'رد شد']);
+        }
+
+        return back()->with('success', 'عملکرد رد شد');
     }
 
-    // تایید/رد دسته‌ای
-    public function bulkApprove(Request $request): JsonResponse
+    public function bulkApprove(Request $request): RedirectResponse|JsonResponse
     {
         $request->validate([
-            'ids' => ['required', 'array', 'min:1'],
+            'ids'   => ['required', 'array'],
             'ids.*' => ['integer', 'exists:performances,id'],
         ]);
 
@@ -103,19 +121,21 @@ class PerformanceController extends Controller
             ->where('validation_status_id', 1)
             ->update([
                 'validation_status_id' => 2,
-                'validated_by'         => $request->user()->personnel_code,
+                'validated_by'         => auth()->id(),
                 'validated_at'         => now(),
             ]);
 
-        return response()->json([
-            'message' => "{$count} عملکرد تایید شد",
-        ]);
+        if ($request->expectsJson()) {
+            return response()->json(['message' => "{$count} عملکرد تایید شد"]);
+        }
+
+        return back()->with('success', "{$count} عملکرد تایید شد");
     }
 
-    public function bulkReject(Request $request): JsonResponse
+    public function bulkReject(Request $request): RedirectResponse|JsonResponse
     {
         $request->validate([
-            'ids'                 => ['required', 'array', 'min:1'],
+            'ids'                 => ['required', 'array'],
             'ids.*'               => ['integer', 'exists:performances,id'],
             'rejection_reason_id' => ['required', 'exists:rejection_reasons,id'],
         ]);
@@ -125,16 +145,17 @@ class PerformanceController extends Controller
             ->update([
                 'validation_status_id' => 3,
                 'rejection_reason_id'  => $request->rejection_reason_id,
-                'validated_by'         => $request->user()->personnel_code,
+                'validated_by'         => auth()->id(),
                 'validated_at'         => now(),
             ]);
 
-        return response()->json([
-            'message' => "{$count} عملکرد رد شد",
-        ]);
+        if ($request->expectsJson()) {
+            return response()->json(['message' => "{$count} عملکرد رد شد"]);
+        }
+
+        return back()->with('success', "{$count} عملکرد رد شد");
     }
 
-    // لیست دلایل رد
     public function rejectionReasons(): JsonResponse
     {
         return response()->json(RejectionReason::all());

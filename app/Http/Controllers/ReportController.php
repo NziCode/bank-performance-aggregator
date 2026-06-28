@@ -2,19 +2,37 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Branch;
 use App\Models\Performance;
+use App\Models\ServiceType;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\View\View;
 
 class ReportController extends Controller
 {
-    // داشبورد خلاصه
+    // --- Web ---
+
+    public function webIndex(Request $request): View
+    {
+        $serviceTypes = ServiceType::all();
+        $branches     = Branch::orderBy('name')->get();
+        $data         = null;
+
+        if ($request->filled('from') && $request->filled('to')) {
+            $data = $this->buildReport($request);
+        }
+
+        return view('reports.index', compact('serviceTypes', 'branches', 'data', ));
+    }
+
+    // --- API ---
+
     public function summary(Request $request): JsonResponse
     {
-        $from = $request->input('from');
-        $to   = $request->input('to');
-
+        $from  = $request->input('from');
+        $to    = $request->input('to');
         $query = Performance::approved();
 
         if ($from && $to) {
@@ -34,19 +52,9 @@ class ReportController extends Controller
                     'service' => $r->serviceType->name,
                     'count'   => $r->count,
                 ]),
-            'by_status' => Performance::when($from && $to, fn($q) => $q->forPeriod($from, $to))
-                ->select('validation_status_id', DB::raw('COUNT(*) as count'))
-                ->groupBy('validation_status_id')
-                ->with('validationStatus')
-                ->get()
-                ->map(fn($r) => [
-                    'status' => $r->validationStatus->name,
-                    'count'  => $r->count,
-                ]),
         ]);
     }
 
-    // گزارش به تفکیک کارمند
     public function byEmployee(Request $request): JsonResponse
     {
         $request->validate([
@@ -54,41 +62,16 @@ class ReportController extends Controller
             'to'   => ['required', 'string'],
         ]);
 
-        $data = Performance::approved()
-            ->forPeriod($request->from, $request->to)
-            ->select([
-                'personnel_code',
-                'service_type_id',
-                DB::raw('COUNT(*) as count'),
-            ])
-            ->with(['employee', 'serviceType'])
-            ->groupBy('personnel_code', 'service_type_id')
-            ->get()
-            ->groupBy('personnel_code')
-            ->map(function ($records) {
-                $first = $records->first();
-                return [
-                    'personnel_code' => $first->personnel_code,
-                    'full_name'      => $first->employee?->full_name,
-                    'branch'         => $first->employee?->branch?->name,
-                    'services'       => $records->mapWithKeys(fn($r) => [
-                        $r->serviceType->name => $r->count,
-                    ]),
-                    'total' => $records->sum('count'),
-                ];
-            })
-            ->sortByDesc('total')
-            ->values();
+        $data = $this->buildReport($request);
 
         return response()->json([
             'from'  => $request->from,
             'to'    => $request->to,
-            'count' => $data->count(),
+            'count' => count($data),
             'data'  => $data,
         ]);
     }
 
-    // گزارش به تفکیک شعبه
     public function byBranch(Request $request): JsonResponse
     {
         $request->validate([
@@ -130,5 +113,47 @@ class ReportController extends Controller
             'count' => $data->count(),
             'data'  => $data,
         ]);
+    }
+
+    // --- Helper ---
+
+    private function buildReport(Request $request): array
+    {
+        $serviceTypes = ServiceType::pluck('name');
+
+        $records = Performance::approved()
+            ->forPeriod($request->from, $request->to)
+            ->when($request->filled('branch_code'), fn($q) => $q->forBranch($request->branch_code))
+            ->select([
+                'personnel_code',
+                'service_type_id',
+                DB::raw('COUNT(*) as count'),
+            ])
+            ->with(['employee.branch', 'serviceType'])
+            ->groupBy('personnel_code', 'service_type_id')
+            ->get()
+            ->groupBy('personnel_code');
+
+        $result = [];
+        foreach ($records as $personnelCode => $rows) {
+            $first    = $rows->first();
+            $services = [];
+
+            foreach ($serviceTypes as $type) {
+                $services[$type] = $rows->first(fn($r) => $r->serviceType?->name === $type)?->count ?? 0;
+            }
+
+            $result[] = [
+                'personnel_code' => $personnelCode,
+                'full_name'      => $first->employee?->full_name,
+                'branch'         => $first->employee?->branch?->name,
+                'services'       => $services,
+                'total'          => $rows->sum('count'),
+            ];
+        }
+
+        usort($result, fn($a, $b) => $b['total'] <=> $a['total']);
+
+        return $result;
     }
 }
