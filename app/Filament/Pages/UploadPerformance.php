@@ -19,7 +19,9 @@ class UploadPerformance extends Page
     protected static ?string $title = 'آپلود فایل عملکرد';
     protected static ?int $navigationSort = 3;
 
-    public ?array $data = [];
+    public ?array $data = [
+        'original_filenames' => [],
+    ];
 
     public static function getNavigationIcon(): string|\BackedEnum|\Illuminate\Contracts\Support\Htmlable|null
     {
@@ -52,6 +54,7 @@ class UploadPerformance extends Page
                     ->acceptedFileTypes(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
                     ->maxSize(10240)
                     ->maxFiles(50)
+                    ->storeFileNamesIn('original_filenames')
                     ->helperText('فقط فایل xlsx — حداکثر 10 مگابایت برای هر فایل')
                     ->required(),
             ])
@@ -60,21 +63,28 @@ class UploadPerformance extends Page
 
     public function submit(): void
     {
-        $data   = $this->form->getState();
-        $period = $data['period'];
-        $files  = $data['files'];
-        $count  = 0;
+        $data          = $this->form->getState();
+        $period        = $data['period'];
+        $files         = $data['files'];
+        $originalNames = $data['original_filenames'] ?? [];
+        $count         = 0;
 
         foreach ($files as $file) {
-            $filename = basename($file);
-            $newPath  = "excel-uploads/{$period}/" . $filename;
+            $sourcePath   = storage_path('app/private/' . $file);
+            $originalName = $originalNames[$file] ?? basename($file);
+            $newPath      = "excel-uploads/{$period}/" . $originalName;
 
-            Storage::move("public/{$file}", $newPath);
+            Storage::put($newPath, file_get_contents($sourcePath));
+
+            // حذف فایل موقت
+            if (file_exists($sourcePath)) {
+                unlink($sourcePath);
+            }
 
             $upload = Upload::create([
-                'original_filename' => $filename,
+                'original_filename' => $originalName,
                 'stored_path'       => $newPath,
-                'branch_code'       => $this->extractBranchCode($filename),
+                'branch_code'       => $this->extractBranchCode($originalName),
                 'period'            => $period,
                 'uploaded_by'       => auth()->id(),
             ]);
