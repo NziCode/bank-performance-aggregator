@@ -34,37 +34,58 @@ class ProcessUploadedFileJob implements ShouldQueue
         $upload->markAsProcessing();
 
         try {
-            $rows   = $parser->parse(Storage::path($upload->stored_path));
-            $errors = [];
-            $saved  = 0;
+            $parsed = $parser->parse(Storage::path($upload->stored_path));
 
-            // کش انواع خدمات
             $serviceTypes = ServiceType::pluck('id', 'name');
+            $errors       = [];
+            $saved        = 0;
 
-            DB::transaction(function () use ($rows, $upload, $serviceTypes, &$saved, &$errors) {
-                foreach ($rows as $row) {
+            DB::transaction(function () use ($parsed, $upload, $serviceTypes, &$saved, &$errors) {
+
+                // پردازش شیت خدمات نوین
+                foreach ($parsed['banking_service'] as $row) {
                     $serviceTypeId = $serviceTypes[$row['service_type']] ?? null;
 
                     if (! $serviceTypeId) {
                         $errors[] = [
                             'row'    => $row['row_number'],
+                            'sheet'  => 'خدمات نوین',
                             'reason' => "نوع خدمت «{$row['service_type']}» نامعتبر است",
                         ];
                         continue;
                     }
 
                     Performance::create([
-                        'date'              => $row['date'],
-                        'branch_code'       => $upload->branch_code,
-                        'personnel_code'    => $row['personnel_code'],
-                        'service_type_id'   => $serviceTypeId,
-                        'customer_account'  => $row['customer_account'],
-                        'customer_name'     => $row['customer_name'],
-                        'terminal_number'   => $row['terminal_number'] ?: null,
-                        'colleague_account' => $row['colleague_account'] ?: null,
-                        'notes'             => $row['notes'] ?: null,
-                        'upload_id'         => $upload->id,
-                        'validation_status_id' => 1, // در انتظار بررسی
+                        'date'                 => $this->parseDate($row['date']),
+                        'branch_code'          => $upload->branch_code,
+                        'personnel_code'       => $row['personnel_code'],
+                        'service_type_id'      => $serviceTypeId,
+                        'customer_account'     => $row['customer_account'],
+                        'customer_name'        => $row['customer_name'],
+                        'notes'                => $row['notes'] ?: null,
+                        'upload_id'            => $upload->id,
+                        'validation_status_id' => 1,
+                    ]);
+
+                    $saved++;
+                }
+
+                // پردازش شیت پایش پایانه
+                $posServiceId = $serviceTypes['پایش پایانه فروش'] ?? null;
+
+                foreach ($parsed['pos_monitoring'] as $row) {
+                    Performance::create([
+                        'date'                 => $this->parseDate($row['date']),
+                        'branch_code'          => $upload->branch_code,
+                        'personnel_code'       => $row['personnel_code'],
+                        'service_type_id'      => $posServiceId,
+                        'customer_account'     => $row['customer_account'],
+                        'customer_name'        => $row['customer_name'],
+                        'terminal_number'      => $row['terminal_number'] ?: null,
+                        'colleague_account'    => $row['colleague_account'] ?: null,
+                        'notes'                => $row['notes'] ?: null,
+                        'upload_id'            => $upload->id,
+                        'validation_status_id' => 1,
                     ]);
 
                     $saved++;
@@ -83,6 +104,19 @@ class ProcessUploadedFileJob implements ShouldQueue
             ]);
             throw $e;
         }
+    }
+
+    private function parseDate(string $date): ?string
+    {
+        $date = trim($date);
+        if (empty($date)) return null;
+
+        // فرمت YYYYMMDD → Y-m-d
+        if (preg_match('/^(\d{4})(\d{2})(\d{2})$/', $date, $m)) {
+            return "{$m[1]}-{$m[2]}-{$m[3]}";
+        }
+
+        return $date;
     }
 
     public function failed(\Throwable $e): void
