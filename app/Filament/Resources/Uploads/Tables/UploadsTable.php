@@ -54,11 +54,11 @@ class UploadsTable
                     ->formatStateUsing(fn($record) => $record->uploader?->full_name),
                 TextColumn::make('processed_at')
                     ->label('زمان پردازش')
-                    ->dateTime('Y/m/d H:i')
+                    ->jalaliDateTime()
                     ->sortable(),
                 TextColumn::make('created_at')
                     ->label('زمان آپلود')
-                    ->dateTime('Y/m/d H:i')
+                    ->jalaliDateTime()
                     ->sortable(),
             ])
             ->filters([

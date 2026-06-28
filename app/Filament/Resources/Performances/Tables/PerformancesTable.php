@@ -2,10 +2,11 @@
 
 namespace App\Filament\Resources\Performances\Tables;
 
-use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use App\Models\RejectionReason;
@@ -68,7 +69,7 @@ class PerformancesTable
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('validated_at')
                     ->label('تاریخ بررسی')
-                    ->dateTime('Y/m/d H:i')
+                    ->jalaliDateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
@@ -82,6 +83,17 @@ class PerformancesTable
                 SelectFilter::make('branch_code')
                     ->label('شعبه')
                     ->relationship('branch', 'name'),
+                Filter::make('date')
+                    ->label('بازه تاریخ')
+                    ->form([
+                        DatePicker::make('from')->label('از تاریخ')->jalali(),
+                        DatePicker::make('to')->label('تا تاریخ')->jalali(),
+                    ])
+                    ->query(function ($query, array $data) {
+                        return $query
+                            ->when($data['from'], fn($q) => $q->where('date', '>=', $data['from']))
+                            ->when($data['to'], fn($q) => $q->where('date', '<=', $data['to']));
+                    }),
             ])
             ->recordActions([
                 ViewAction::make()->label('مشاهده'),
