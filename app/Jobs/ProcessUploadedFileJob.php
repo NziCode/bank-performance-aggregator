@@ -6,12 +6,14 @@ use App\Exceptions\InvalidExcelStructureException;
 use App\Models\Performance;
 use App\Models\ServiceType;
 use App\Models\Upload;
+use App\Models\User;
 use App\Services\Excel\ExcelParserService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -40,12 +42,15 @@ class ProcessUploadedFileJob implements ShouldQueue
             $errors       = [];
             $saved        = 0;
 
-            DB::transaction(function () use ($parsed, $upload, $serviceTypes, &$saved, &$errors) {
+            // کش کد شعبه به ازای کد پرسنلی
+            $branchCodeCache = [];
+
+            DB::transaction(function () use ($parsed, $upload, $serviceTypes, &$saved, &$errors, &$branchCodeCache) {
 
                 // پردازش شیت خدمات نوین
                 foreach ($parsed['banking_service'] as $row) {
-                    $serviceTypeId = $serviceTypes[$row['service_type']] ?? null;
 
+                    $serviceTypeId = $serviceTypes[$row['service_type']] ?? null;
                     if (! $serviceTypeId) {
                         $errors[] = [
                             'row'    => $row['row_number'],
@@ -55,9 +60,19 @@ class ProcessUploadedFileJob implements ShouldQueue
                         continue;
                     }
 
+                    $branchCode = $this->getBranchCode($row['personnel_code'], $branchCodeCache);
+                    if (! $branchCode) {
+                        $errors[] = [
+                            'row'    => $row['row_number'],
+                            'sheet'  => 'خدمات نوین',
+                            'reason' => "کد پرسنلی «{$row['personnel_code']}» در سیستم یافت نشد",
+                        ];
+                        continue;
+                    }
+
                     Performance::create([
                         'date'                 => $this->parseDate($row['date']),
-                        'branch_code'          => $upload->branch_code,
+                        'branch_code'          => $branchCode,
                         'personnel_code'       => $row['personnel_code'],
                         'service_type_id'      => $serviceTypeId,
                         'customer_account'     => $row['customer_account'],
@@ -74,9 +89,20 @@ class ProcessUploadedFileJob implements ShouldQueue
                 $posServiceId = $serviceTypes['پایش پایانه فروش'] ?? null;
 
                 foreach ($parsed['pos_monitoring'] as $row) {
+
+                    $branchCode = $this->getBranchCode($row['personnel_code'], $branchCodeCache);
+                    if (! $branchCode) {
+                        $errors[] = [
+                            'row'    => $row['row_number'],
+                            'sheet'  => 'پایش پایانه های فروش',
+                            'reason' => "کد پرسنلی «{$row['personnel_code']}» در سیستم یافت نشد",
+                        ];
+                        continue;
+                    }
+
                     Performance::create([
                         'date'                 => $this->parseDate($row['date']),
-                        'branch_code'          => $upload->branch_code,
+                        'branch_code'          => $branchCode,
                         'personnel_code'       => $row['personnel_code'],
                         'service_type_id'      => $posServiceId,
                         'customer_account'     => $row['customer_account'],
@@ -106,12 +132,22 @@ class ProcessUploadedFileJob implements ShouldQueue
         }
     }
 
+    private function getBranchCode(string $personnelCode, array &$cache): ?int
+    {
+        if (! isset($cache[$personnelCode])) {
+            $user = User::where('personnel_code', $personnelCode)
+                ->select('branch_code')
+                ->first();
+            $cache[$personnelCode] = $user?->branch_code;
+        }
+        return $cache[$personnelCode];
+    }
+
     private function parseDate(string $date): ?string
     {
         $date = trim($date);
         if (empty($date)) return null;
 
-        // فرمت YYYYMMDD → Y-m-d
         if (preg_match('/^(\d{4})(\d{2})(\d{2})$/', $date, $m)) {
             return "{$m[1]}-{$m[2]}-{$m[3]}";
         }

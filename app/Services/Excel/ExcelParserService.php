@@ -10,8 +10,9 @@ class ExcelParserService
 {
     private const SHEET_BANKING  = 'خدمات نوین';
     private const SHEET_POS      = 'پایش پایانه های فروش';
-    private const HEADER_ROW     = 2; // سطر هدر (1-indexed)
-    private const DATA_START_ROW = 3; // اولین سطر داده
+    private const DATA_START_ROW = 3;
+
+    private const VALID_ACCOUNT_PREFIXES = ['01', '02', '03', '04', '08'];
 
     public function parse(string $filePath): array
     {
@@ -43,18 +44,12 @@ class ExcelParserService
 
     private function parseBankingSheet($sheet): array
     {
-        // ستون‌ها (0-indexed):
-        // 0:ردیف | 1:تاریخ | 2:کد حوزه | 3:کد شعبه | 4:نام شعبه
-        // 5:کد کارمندی | 6:نام کارمند | 7:نوع خدمات
-        // 8:شماره حساب مشتری | 9:نام مشتری | 10:توضیحات
-
         $rows       = [];
         $highestRow = $sheet->getHighestDataRow();
 
         for ($rowIndex = self::DATA_START_ROW; $rowIndex <= $highestRow; $rowIndex++) {
             $raw = $this->getRowValues($sheet, $rowIndex, 11);
 
-            // سطر خالی — کد کارمندی و شماره حساب هر دو خالی
             if ($this->isEmpty($raw[5]) && $this->isEmpty($raw[8])) {
                 continue;
             }
@@ -62,9 +57,6 @@ class ExcelParserService
             $rows[] = [
                 'row_number'       => $rowIndex,
                 'date'             => $this->clean($raw[1]),
-                'zone'             => $this->clean($raw[2]),
-                'branch_code'      => $this->clean($raw[3]),
-                'branch_name'      => $this->clean($raw[4]),
                 'personnel_code'   => $this->clean($raw[5]),
                 'employee_name'    => $this->clean($raw[6]),
                 'service_type'     => $this->clean($raw[7]),
@@ -79,11 +71,6 @@ class ExcelParserService
 
     private function parsePosSheet($sheet): array
     {
-        // ستون‌ها (0-indexed):
-        // 0:ردیف | 1:تاریخ | 2:کد حوزه | 3:کد شعبه | 4:نام شعبه
-        // 5:کد کارمندی | 6:نام کارمند | 7:شماره پایانه
-        // 8:شماره حساب مشتری | 9:نام مشتری | 10:شماره حساب همکار | 11:توضیحات
-
         $rows       = [];
         $highestRow = $sheet->getHighestDataRow();
 
@@ -97,9 +84,6 @@ class ExcelParserService
             $rows[] = [
                 'row_number'        => $rowIndex,
                 'date'              => $this->clean($raw[1]),
-                'zone'              => $this->clean($raw[2]),
-                'branch_code'       => $this->clean($raw[3]),
-                'branch_name'       => $this->clean($raw[4]),
                 'personnel_code'    => $this->clean($raw[5]),
                 'employee_name'     => $this->clean($raw[6]),
                 'terminal_number'   => $this->clean($raw[7]),
@@ -133,10 +117,34 @@ class ExcelParserService
         return trim(preg_replace('/[\r\n\t]+/', ' ', (string) ($value ?? '')));
     }
 
-    private function normalizeAccount(mixed $value): string
+    public function normalizeAccount(mixed $value): string
     {
         if ($this->isEmpty($value)) return '';
+
+        // حذف فاصله و خط تیره
         $clean = preg_replace('/[\s\-]/', '', (string) $value);
-        return ltrim($clean, '0');
+
+        // فقط اعداد بمونن
+        $clean = preg_replace('/[^0-9]/', '', $clean);
+
+        if (empty($clean)) return '';
+
+        // اگه 12 رقمه، 0 اول رو اضافه کن
+        if (strlen($clean) === 12) {
+            $clean = '0' . $clean;
+        }
+
+        // اگه 13 رقم نشد، نامعتبره
+        if (strlen($clean) !== 13) {
+            return $clean; // برمیگردونیم تا در validation خطا بده
+        }
+
+        // بررسی پیشوند معتبر
+        $prefix = substr($clean, 0, 2);
+        if (! in_array($prefix, self::VALID_ACCOUNT_PREFIXES)) {
+            return $clean; // برمیگردونیم تا در validation خطا بده
+        }
+
+        return $clean;
     }
 }
