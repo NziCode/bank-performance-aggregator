@@ -93,6 +93,7 @@
                         <th class="pb-2 font-medium">همکار</th>
                         <th class="pb-2 font-medium">شعبه</th>
                         <th class="pb-2 font-medium">نوع خدمت</th>
+                        <th class="pb-2 font-medium">شماره حساب</th>
                         <th class="pb-2 font-medium">نام مشتری</th>
                         <th class="pb-2 font-medium">وضعیت</th>
                         <th class="pb-2 font-medium">عملیات</th>
@@ -115,6 +116,7 @@
                             <td class="py-2">{{ $performance->employee?->full_name }}</td>
                             <td class="py-2">{{ $performance->branch?->name }}</td>
                             <td class="py-2">{{ $performance->serviceType?->name }}</td>
+                            <td class="py-2">{{ $performance->customer_account }}</td>
                             <td class="py-2">{{ $performance->customer_name }}</td>
                             <td class="py-2">
                                     <span class="px-2 py-1 rounded-full text-xs {{ $colors[$performance->validation_status_id] }}">

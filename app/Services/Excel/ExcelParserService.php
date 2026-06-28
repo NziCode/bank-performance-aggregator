@@ -134,17 +134,25 @@ class ExcelParserService
             $clean = '0' . $clean;
         }
 
-        // اگه 13 رقم نشد، نامعتبره
+        // اگه 13 رقم نشد، نامعتبره — برمیگردونیم تا validation خطا بده
         if (strlen($clean) !== 13) {
-            return $clean; // برمیگردونیم تا در validation خطا بده
+            return $clean;
         }
 
         // بررسی پیشوند معتبر
         $prefix = substr($clean, 0, 2);
         if (! in_array($prefix, self::VALID_ACCOUNT_PREFIXES)) {
-            return $clean; // برمیگردونیم تا در validation خطا بده
+            return $clean; // برمیگردونیم تا validation خطا بده
         }
 
         return $clean;
+    }
+
+    public function isValidAccount(string $account): bool
+    {
+        if (strlen($account) !== 13) return false;
+
+        $prefix = substr($account, 0, 2);
+        return in_array($prefix, self::VALID_ACCOUNT_PREFIXES);
     }
 }
