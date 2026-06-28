@@ -59,7 +59,6 @@ class Performance extends Model
         return $this->belongsTo(User::class, 'validated_by', 'personnel_code');
     }
 
-    // Scopes
     public function scopePending($query)
     {
         return $query->where('validation_status_id', 1);
@@ -85,13 +84,13 @@ class Performance extends Model
         return $query->where('personnel_code', $personnelCode);
     }
 
-    public function scopeForPeriod($query, string $from, string $to)
+    public function scopeForDateRange($query, string $from, string $to)
     {
         return $query->whereBetween('date', [$from, $to]);
     }
 
-    public function isPosMonitoring(): bool
+    public function scopeForPeriod($query, string $from, string $to)
     {
-        return $this->serviceType->requiresPosFields();
+        return $query->whereBetween('date', [$from, $to]);
     }
 }

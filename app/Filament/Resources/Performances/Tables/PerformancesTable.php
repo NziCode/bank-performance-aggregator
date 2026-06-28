@@ -21,7 +21,7 @@ class PerformancesTable
             ->columns([
                 TextColumn::make('date')
                     ->label('تاریخ')
-                    ->date('Y/m/d')
+                    ->jalaliDate()
                     ->sortable(),
                 TextColumn::make('branch.name')
                     ->label('شعبه')

@@ -13,10 +13,10 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Morilog\Jalali\Jalalian;
 
 class ProcessUploadedFileJob implements ShouldQueue
 {
@@ -38,19 +38,17 @@ class ProcessUploadedFileJob implements ShouldQueue
         try {
             $parsed = $parser->parse(Storage::path($upload->stored_path));
 
-            $serviceTypes = ServiceType::pluck('id', 'name');
-            $errors       = [];
-            $saved        = 0;
-
-            // کش کد شعبه به ازای کد پرسنلی
+            $serviceTypes    = ServiceType::pluck('id', 'name');
+            $errors          = [];
+            $saved           = 0;
             $branchCodeCache = [];
 
             DB::transaction(function () use ($parsed, $upload, $serviceTypes, &$saved, &$errors, &$branchCodeCache) {
 
                 // پردازش شیت خدمات نوین
                 foreach ($parsed['banking_service'] as $row) {
-
                     $serviceTypeId = $serviceTypes[$row['service_type']] ?? null;
+
                     if (! $serviceTypeId) {
                         $errors[] = [
                             'row'    => $row['row_number'],
@@ -70,8 +68,18 @@ class ProcessUploadedFileJob implements ShouldQueue
                         continue;
                     }
 
+                    $date = $this->parseDate($row['date']);
+                    if (! $date) {
+                        $errors[] = [
+                            'row'    => $row['row_number'],
+                            'sheet'  => 'خدمات نوین',
+                            'reason' => "تاریخ «{$row['date']}» نامعتبر است",
+                        ];
+                        continue;
+                    }
+
                     Performance::create([
-                        'date'                 => $this->parseDate($row['date']),
+                        'date'                 => $date,
                         'branch_code'          => $branchCode,
                         'personnel_code'       => $row['personnel_code'],
                         'service_type_id'      => $serviceTypeId,
@@ -89,7 +97,6 @@ class ProcessUploadedFileJob implements ShouldQueue
                 $posServiceId = $serviceTypes['پایش پایانه فروش'] ?? null;
 
                 foreach ($parsed['pos_monitoring'] as $row) {
-
                     $branchCode = $this->getBranchCode($row['personnel_code'], $branchCodeCache);
                     if (! $branchCode) {
                         $errors[] = [
@@ -100,8 +107,18 @@ class ProcessUploadedFileJob implements ShouldQueue
                         continue;
                     }
 
+                    $date = $this->parseDate($row['date']);
+                    if (! $date) {
+                        $errors[] = [
+                            'row'    => $row['row_number'],
+                            'sheet'  => 'پایش پایانه های فروش',
+                            'reason' => "تاریخ «{$row['date']}» نامعتبر است",
+                        ];
+                        continue;
+                    }
+
                     Performance::create([
-                        'date'                 => $this->parseDate($row['date']),
+                        'date'                 => $date,
                         'branch_code'          => $branchCode,
                         'personnel_code'       => $row['personnel_code'],
                         'service_type_id'      => $posServiceId,
@@ -135,9 +152,7 @@ class ProcessUploadedFileJob implements ShouldQueue
     private function getBranchCode(string $personnelCode, array &$cache): ?int
     {
         if (! isset($cache[$personnelCode])) {
-            $user = User::where('personnel_code', $personnelCode)
-                ->select('branch_code')
-                ->first();
+            $user = User::where('personnel_code', $personnelCode)->select('branch_code')->first();
             $cache[$personnelCode] = $user?->branch_code;
         }
         return $cache[$personnelCode];
@@ -148,10 +163,10 @@ class ProcessUploadedFileJob implements ShouldQueue
         $date = trim($date);
         if (empty($date)) return null;
 
-        // فرمت YYYYMMDD شمسی → میلادی
+        // فرمت YYYYMMDD شمسی
         if (preg_match('/^(\d{4})(\d{2})(\d{2})$/', $date, $m)) {
             try {
-                $jalali = \Morilog\Jalali\Jalalian::fromFormat('Y/m/d', "{$m[1]}/{$m[2]}/{$m[3]}");
+                $jalali = Jalalian::fromFormat('Y/m/d', "{$m[1]}/{$m[2]}/{$m[3]}");
                 return $jalali->toCarbon()->toDateString();
             } catch (\Exception $e) {
                 return null;

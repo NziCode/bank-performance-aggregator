@@ -4,12 +4,14 @@ namespace App\Filament\Pages;
 
 use App\Jobs\ProcessUploadedFileJob;
 use App\Models\Upload;
+use Carbon\Carbon;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Storage;
+use Morilog\Jalali\Jalalian;
 
 class UploadPerformance extends Page
 {
@@ -42,12 +44,13 @@ class UploadPerformance extends Page
     {
         return $schema
             ->schema([
-                TextInput::make('period')
+                DatePicker::make('period')
                     ->label('دوره گزارش')
-                    ->placeholder('مثال: 140501')
-                    ->regex('/^\d{6}$/')
-                    ->helperText('فرمت: YYYYMM — مثال: 140501')
-                    ->required(),
+                    ->jalali()
+                    ->displayFormat('Y/m')
+                    ->helperText('ماه و سال گزارش را انتخاب کنید')
+                    ->required()
+                    ->columnSpanFull(),
                 FileUpload::make('files')
                     ->label('فایل‌های Excel')
                     ->multiple()
@@ -56,18 +59,23 @@ class UploadPerformance extends Page
                     ->maxFiles(50)
                     ->storeFileNamesIn('original_filenames')
                     ->helperText('فقط فایل xlsx — حداکثر 10 مگابایت برای هر فایل')
-                    ->required(),
+                    ->required()
+                    ->columnSpanFull(),
             ])
-            ->statePath('data');
+            ->statePath('data')
+            ->columns(1);
     }
 
     public function submit(): void
     {
         $data          = $this->form->getState();
-        $period        = $data['period'];
         $files         = $data['files'];
         $originalNames = $data['original_filenames'] ?? [];
         $count         = 0;
+
+        // تبدیل تاریخ میلادی به دوره شمسی YYYYMM
+        $jalali = Jalalian::fromCarbon(Carbon::parse($data['period']));
+        $period = $jalali->getYear() . str_pad($jalali->getMonth(), 2, '0', STR_PAD_LEFT);
 
         foreach ($files as $file) {
             $sourcePath   = storage_path('app/private/' . $file);
@@ -76,7 +84,6 @@ class UploadPerformance extends Page
 
             Storage::put($newPath, file_get_contents($sourcePath));
 
-            // حذف فایل موقت
             if (file_exists($sourcePath)) {
                 unlink($sourcePath);
             }
