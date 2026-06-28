@@ -102,7 +102,9 @@ class ExcelParserService
         $values = [];
         for ($col = 1; $col <= $colCount; $col++) {
             $coordinate = Coordinate::stringFromColumnIndex($col) . $rowIndex;
-            $values[$col - 1] = $sheet->getCell($coordinate)->getValue();
+            $cell = $sheet->getCell($coordinate);
+            // مقدار رو به string تبدیل کن تا صفر اول حذف نشه
+            $values[$col - 1] = $cell->getFormattedValue();
         }
         return $values;
     }
