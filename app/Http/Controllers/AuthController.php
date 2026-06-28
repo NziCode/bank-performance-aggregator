@@ -3,11 +3,15 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\View\View;
 
 class AuthController extends Controller
 {
+    // --- API ---
+
     public function login(Request $request): JsonResponse
     {
         $credentials = $request->validate([
@@ -28,8 +32,8 @@ class AuthController extends Controller
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
-            'token'      => $token,
-            'user'       => [
+            'token' => $token,
+            'user'  => [
                 'personnel_code' => $user->personnel_code,
                 'full_name'      => $user->full_name,
                 'position'       => $user->position,
@@ -72,5 +76,36 @@ class AuthController extends Controller
                 default         => null,
             },
         ]);
+    }
+
+    // --- Web ---
+
+    public function showLogin(): View
+    {
+        return view('auth.login');
+    }
+
+    public function loginWeb(Request $request): RedirectResponse
+    {
+        $credentials = $request->validate([
+            'personnel_code' => ['required', 'string'],
+            'password'       => ['required', 'string'],
+        ]);
+
+        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
+            return back()->withErrors([
+                'personnel_code' => 'کد پرسنلی یا رمز عبور اشتباه است',
+            ]);
+        }
+
+        return redirect()->route('dashboard');
+    }
+
+    public function logoutWeb(Request $request): RedirectResponse
+    {
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        return redirect()->route('login');
     }
 }
