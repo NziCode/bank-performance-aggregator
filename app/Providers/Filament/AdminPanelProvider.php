@@ -6,6 +6,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -33,6 +34,10 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->brandName('سامانه ارزیابی عملکرد')
             ->darkMode(false)
+            ->navigationGroups([
+                NavigationGroup::make('عملکرد'),
+                NavigationGroup::make('مدیریت'),
+            ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
@@ -60,8 +65,25 @@ class AdminPanelProvider extends PanelProvider
             ->spa()
             ->renderHook(
                 'panels::head.end',
-                fn() => '<style>body, .fi-body { direction: rtl; font-family: Vazirmatn, sans-serif; }</style>
-                <link href="https://fonts.bunny.net/css?family=vazirmatn:400,500,600,700&display=swap" rel="stylesheet">'
+                fn() => '
+                <link href="https://fonts.bunny.net/css?family=vazirmatn:400,500,600,700&display=swap" rel="stylesheet">
+                <style>
+                    body, .fi-body, .fi-main, .fi-sidebar, .fi-topbar {
+                        direction: rtl;
+                        font-family: Vazirmatn, sans-serif;
+                    }
+                    select {
+                        direction: rtl;
+                        text-align: right;
+                        background-position: left 0.5rem center !important;
+                        padding-right: 0.75rem !important;
+                        padding-left: 2rem !important;
+                    }
+                    .fi-select-input {
+                        direction: rtl;
+                        text-align: right;
+                    }
+                </style>'
             );
     }
 }
