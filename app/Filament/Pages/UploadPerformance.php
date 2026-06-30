@@ -16,23 +16,15 @@ class UploadPerformance extends Page
 {
     protected string $view = 'filament.pages.upload-performance';
 
-    protected static ?string $navigationLabel = 'آپلود فایل عملکرد';
     protected static ?string $title = 'آپلود فایل عملکرد';
-    protected static ?int $navigationSort = 3;
+
+    // این صفحه دیگر آیتم مستقل منو نیست —
+    // فقط از طریق دکمه «ایجاد آپلود جدید» در صفحه لیست آپلودها قابل دسترسی است
+    protected static bool $shouldRegisterNavigation = false;
 
     public ?array $data = [
         'original_filenames' => [],
     ];
-
-    public static function getNavigationIcon(): string|\BackedEnum|\Illuminate\Contracts\Support\Htmlable|null
-    {
-        return 'heroicon-o-arrow-up-tray';
-    }
-
-    public static function getNavigationGroup(): ?string
-    {
-        return 'عملکرد';
-    }
 
     public function mount(): void
     {
@@ -95,11 +87,11 @@ class UploadPerformance extends Page
             $count++;
         }
 
-        $this->form->fill();
-
         Notification::make()
             ->title("{$count} فایل با موفقیت در صف پردازش قرار گرفت")
             ->success()
             ->send();
+
+        $this->redirect(\App\Filament\Resources\Uploads\UploadResource::getUrl('index'));
     }
 }

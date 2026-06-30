@@ -2,10 +2,8 @@
 
 namespace App\Filament\Resources\Uploads;
 
-use App\Filament\Resources\Uploads\Pages\CreateUpload;
 use App\Filament\Resources\Uploads\Pages\ListUploads;
 use App\Filament\Resources\Uploads\Pages\ViewUpload;
-use App\Filament\Resources\Uploads\Schemas\UploadForm;
 use App\Filament\Resources\Uploads\Schemas\UploadInfolist;
 use App\Filament\Resources\Uploads\Tables\UploadsTable;
 use App\Models\Upload;
@@ -23,15 +21,11 @@ class UploadResource extends Resource
     protected static ?string $navigationLabel = 'آپلودها';
     protected static ?string $modelLabel = 'آپلود';
     protected static ?string $pluralModelLabel = 'آپلودها';
+    protected static ?int $navigationSort = 2;
+
     public static function getNavigationGroup(): ?string
     {
         return 'عملکرد';
-    }
-    protected static ?int $navigationSort = 2;
-
-    public static function form(Schema $schema): Schema
-    {
-        return UploadForm::configure($schema);
     }
 
     public static function infolist(Schema $schema): Schema
@@ -52,9 +46,8 @@ class UploadResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => ListUploads::route('/'),
-            'create' => CreateUpload::route('/create'),
-            'view'   => ViewUpload::route('/{record}'),
+            'index' => ListUploads::route('/'),
+            'view'  => ViewUpload::route('/{record}'),
         ];
     }
 }

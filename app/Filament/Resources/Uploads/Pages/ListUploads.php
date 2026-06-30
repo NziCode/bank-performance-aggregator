@@ -2,8 +2,9 @@
 
 namespace App\Filament\Resources\Uploads\Pages;
 
+use App\Filament\Pages\UploadPerformance;
 use App\Filament\Resources\Uploads\UploadResource;
-use Filament\Actions\CreateAction;
+use Filament\Actions\Action;
 use Filament\Resources\Pages\ListRecords;
 
 class ListUploads extends ListRecords
@@ -13,7 +14,11 @@ class ListUploads extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            CreateAction::make(),
+            Action::make('uploadPerformance')
+                ->label('آپلود فایل عملکرد')
+                ->icon('heroicon-o-arrow-up-tray')
+                ->url(fn() => UploadPerformance::getUrl())
+                ->color('primary'),
         ];
     }
 }
