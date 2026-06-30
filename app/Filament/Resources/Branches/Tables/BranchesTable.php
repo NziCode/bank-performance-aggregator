@@ -6,7 +6,6 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -24,11 +23,13 @@ class BranchesTable
                 TextColumn::make('name')
                     ->label('نام شعبه')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->weight('bold'),
                 TextColumn::make('zone.name')
                     ->label('حوزه')
                     ->sortable()
-                    ->searchable(),
+                    ->searchable()
+                    ->placeholder('ممتاز / بدون حوزه'),
                 TextColumn::make('grade')
                     ->label('درجه')
                     ->badge()
@@ -49,7 +50,8 @@ class BranchesTable
             ->filters([
                 SelectFilter::make('zone_code')
                     ->label('حوزه')
-                    ->relationship('zone', 'name'),
+                    ->relationship('zone', 'name')
+                    ->searchable(),
                 SelectFilter::make('grade')
                     ->label('درجه')
                     ->options([
@@ -73,6 +75,6 @@ class BranchesTable
             ])
             ->defaultSort('code')
             ->striped()
-            ->paginated([10, 25, 50]);
+            ->paginated([10, 25, 50, 100]);
     }
 }

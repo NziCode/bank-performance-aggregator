@@ -1,37 +1,32 @@
 <?php
 
-namespace App\Filament\Resources\Zones\Schemas;
+namespace App\Filament\Resources\StaffUnits\Schemas;
 
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
-class ZoneInfolist
+class StaffUnitInfolist
 {
     public static function configure(Schema $schema): Schema
     {
         return $schema
             ->components([
-                Section::make('اطلاعات حوزه')
-                    ->icon('heroicon-o-map-pin')
+                Section::make('اطلاعات واحد ستادی')
+                    ->icon('heroicon-o-building-library')
                     ->columns(3)
                     ->schema([
                         TextEntry::make('code')
-                            ->label('کد حوزه')
+                            ->label('کد واحد')
                             ->weight('bold'),
                         TextEntry::make('name')
-                            ->label('نام حوزه')
+                            ->label('نام واحد')
                             ->weight('bold'),
-                        TextEntry::make('branches_count')
-                            ->label('تعداد شعب تحت پوشش')
-                            ->state(fn($record) => $record->branches()->count())
-                            ->badge()
-                            ->color('success'),
                         TextEntry::make('employees_count')
-                            ->label('تعداد کارمندان ستاد حوزه')
+                            ->label('تعداد کارمندان')
                             ->state(fn($record) => $record->employees()->count())
                             ->badge()
-                            ->color('info'),
+                            ->color('success'),
                         TextEntry::make('created_at')
                             ->label('تاریخ ایجاد')
                             ->jalaliDateTime(),

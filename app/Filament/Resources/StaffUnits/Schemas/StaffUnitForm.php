@@ -1,11 +1,11 @@
 <?php
 
-namespace App\Filament\Resources\Zones\Schemas;
+namespace App\Filament\Resources\StaffUnits\Schemas;
 
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
 
-class ZoneForm
+class StaffUnitForm
 {
     public static function configure(Schema $schema): Schema
     {
@@ -13,12 +13,12 @@ class ZoneForm
             ->columns(1)
             ->components([
                 TextInput::make('code')
-                    ->label('کد حوزه')
+                    ->label('کد واحد')
                     ->required()
                     ->numeric()
                     ->unique(ignoreRecord: true),
                 TextInput::make('name')
-                    ->label('نام حوزه')
+                    ->label('نام واحد')
                     ->required()
                     ->maxLength(100),
             ]);

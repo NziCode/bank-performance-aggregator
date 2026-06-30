@@ -24,11 +24,12 @@ class UserResource extends Resource
     protected static ?string $navigationLabel = 'کارمندان';
     protected static ?string $modelLabel = 'کارمند';
     protected static ?string $pluralModelLabel = 'کارمندان';
+    protected static ?int $navigationSort = 5;
+
     public static function getNavigationGroup(): ?string
     {
         return 'مدیریت';
     }
-    protected static ?int $navigationSort = 3;
 
     public static function form(Schema $schema): Schema
     {

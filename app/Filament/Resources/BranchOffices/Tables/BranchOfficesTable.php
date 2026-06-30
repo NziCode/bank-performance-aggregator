@@ -1,35 +1,40 @@
 <?php
 
-namespace App\Filament\Resources\Zones\Tables;
+namespace App\Filament\Resources\BranchOffices\Tables;
 
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
-class ZonesTable
+class BranchOfficesTable
 {
     public static function configure(Table $table): Table
     {
         return $table
             ->columns([
-                TextColumn::make('code')
-                    ->label('کد حوزه')
-                    ->searchable()
-                    ->sortable(),
                 TextColumn::make('name')
-                    ->label('نام حوزه')
+                    ->label('نام باجه')
                     ->searchable()
                     ->sortable()
                     ->weight('bold'),
-                TextColumn::make('branches_count')
-                    ->label('تعداد شعب')
-                    ->counts('branches')
+                TextColumn::make('branch.name')
+                    ->label('شعبه عامل')
+                    ->searchable()
                     ->sortable(),
+                TextColumn::make('branch_code')
+                    ->label('کد شعبه عامل')
+                    ->searchable()
+                    ->sortable(),
+                TextColumn::make('address')
+                    ->label('آدرس')
+                    ->limit(40)
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('employees_count')
-                    ->label('تعداد کارمند ستاد')
+                    ->label('تعداد کارمند')
                     ->counts('employees')
                     ->sortable(),
                 TextColumn::make('created_at')
@@ -37,6 +42,12 @@ class ZonesTable
                     ->jalaliDate()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->filters([
+                SelectFilter::make('branch_code')
+                    ->label('شعبه عامل')
+                    ->relationship('branch', 'name')
+                    ->searchable(),
             ])
             ->recordActions([
                 ViewAction::make()->label('مشاهده'),
@@ -47,7 +58,7 @@ class ZonesTable
                     DeleteBulkAction::make()->label('حذف'),
                 ]),
             ])
-            ->defaultSort('code')
+            ->defaultSort('name')
             ->striped()
             ->paginated([10, 25, 50, 100]);
     }

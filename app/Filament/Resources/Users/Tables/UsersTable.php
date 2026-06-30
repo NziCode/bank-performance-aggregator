@@ -49,15 +49,15 @@ class UsersTable
                     ->badge()
                     ->formatStateUsing(fn($state) => match($state) {
                         'branch'        => 'شعبه',
-                        'zone'          => 'حوزه',
                         'branch_office' => 'باجه',
+                        'zone'          => 'حوزه',
                         'staff'         => 'ستاد',
                         default         => $state,
                     })
                     ->color(fn($state) => match($state) {
                         'branch'        => 'info',
-                        'zone'          => 'warning',
                         'branch_office' => 'success',
+                        'zone'          => 'warning',
                         'staff'         => 'gray',
                         default         => 'gray',
                     })
@@ -66,6 +66,10 @@ class UsersTable
                     ->label('شعبه')
                     ->sortable()
                     ->toggleable(),
+                TextColumn::make('branchOffice.name')
+                    ->label('باجه')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('zone.name')
                     ->label('حوزه')
                     ->sortable()
@@ -80,16 +84,26 @@ class UsersTable
                     ->label('نوع محل خدمت')
                     ->options([
                         'branch'        => 'شعبه',
-                        'zone'          => 'حوزه',
                         'branch_office' => 'باجه',
+                        'zone'          => 'حوزه',
                         'staff'         => 'ستاد',
                     ]),
                 SelectFilter::make('branch_code')
                     ->label('شعبه')
-                    ->relationship('branch', 'name'),
+                    ->relationship('branch', 'name')
+                    ->searchable(),
                 SelectFilter::make('zone_code')
                     ->label('حوزه')
-                    ->relationship('zone', 'name'),
+                    ->relationship('zone', 'name')
+                    ->searchable(),
+                SelectFilter::make('branch_office_id')
+                    ->label('باجه')
+                    ->relationship('branchOffice', 'name')
+                    ->searchable(),
+                SelectFilter::make('staff_unit_code')
+                    ->label('واحد ستادی')
+                    ->relationship('staffUnit', 'name')
+                    ->searchable(),
                 SelectFilter::make('education')
                     ->label('تحصیلات')
                     ->options([
