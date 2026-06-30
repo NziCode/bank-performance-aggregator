@@ -11,7 +11,6 @@ class Upload extends Model
     protected $fillable = [
         'original_filename',
         'stored_path',
-        'branch_code',
         'period',
         'status',
         'rows_processed',
@@ -24,13 +23,9 @@ class Upload extends Model
 
     protected $casts = [
         'errors'       => 'array',
+        'period'       => 'date',
         'processed_at' => 'datetime',
     ];
-
-    public function branch(): BelongsTo
-    {
-        return $this->belongsTo(Branch::class, 'branch_code', 'code');
-    }
 
     public function uploader(): BelongsTo
     {

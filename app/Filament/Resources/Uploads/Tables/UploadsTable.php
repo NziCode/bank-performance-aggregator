@@ -18,10 +18,6 @@ class UploadsTable
                     ->label('نام فایل')
                     ->searchable()
                     ->sortable(),
-                TextColumn::make('branch.name')
-                    ->label('شعبه')
-                    ->sortable()
-                    ->searchable(),
                 TextColumn::make('period')
                     ->label('دوره')
                     ->jalaliDate()
@@ -34,12 +30,14 @@ class UploadsTable
                         'processing' => 'info',
                         'completed'  => 'success',
                         'failed'     => 'danger',
+                        default      => 'gray',
                     })
                     ->formatStateUsing(fn($state) => match($state) {
                         'pending'    => 'در انتظار',
                         'processing' => 'در حال پردازش',
                         'completed'  => 'تکمیل شده',
                         'failed'     => 'ناموفق',
+                        default      => $state,
                     })
                     ->sortable(),
                 TextColumn::make('rows_processed')
@@ -71,9 +69,6 @@ class UploadsTable
                         'completed'  => 'تکمیل شده',
                         'failed'     => 'ناموفق',
                     ]),
-                SelectFilter::make('branch_code')
-                    ->label('شعبه')
-                    ->relationship('branch', 'name'),
             ])
             ->recordActions([
                 ViewAction::make()->label('مشاهده'),

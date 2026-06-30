@@ -11,7 +11,6 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Storage;
-use Morilog\Jalali\Jalalian;
 
 class UploadPerformance extends Page
 {
@@ -48,7 +47,7 @@ class UploadPerformance extends Page
                     ->label('دوره گزارش')
                     ->jalali()
                     ->displayFormat('Y/m/d')
-                    ->helperText('تاریخ دوره گزارش را انتخاب کنید')
+                    ->helperText('تاریخ دوره گزارش را انتخاب کنید — این فایل می‌تواند شامل عملکرد چند شعبه/باجه/حوزه/ستاد باشد')
                     ->required()
                     ->columnSpanFull(),
                 FileUpload::make('files')
@@ -69,11 +68,10 @@ class UploadPerformance extends Page
     public function submit(): void
     {
         $data          = $this->form->getState();
+        $period        = Carbon::parse($data['period'])->toDateString();
         $files         = $data['files'];
         $originalNames = $data['original_filenames'] ?? [];
         $count         = 0;
-
-        $period = Carbon::parse($data['period'])->toDateString();
 
         foreach ($files as $file) {
             $sourcePath   = storage_path('app/private/' . $file);
@@ -89,7 +87,6 @@ class UploadPerformance extends Page
             $upload = Upload::create([
                 'original_filename' => $originalName,
                 'stored_path'       => $newPath,
-                'branch_code'       => $this->extractBranchCode($originalName),
                 'period'            => $period,
                 'uploaded_by'       => auth()->id(),
             ]);
@@ -104,11 +101,5 @@ class UploadPerformance extends Page
             ->title("{$count} فایل با موفقیت در صف پردازش قرار گرفت")
             ->success()
             ->send();
-    }
-
-    private function extractBranchCode(string $filename): ?int
-    {
-        $name = pathinfo($filename, PATHINFO_FILENAME);
-        return is_numeric($name) ? (int) $name : null;
     }
 }

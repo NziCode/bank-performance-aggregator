@@ -18,9 +18,6 @@ class UploadInfolist
                     ->schema([
                         TextEntry::make('original_filename')
                             ->label('نام اصلی فایل'),
-                        TextEntry::make('branch.name')
-                            ->label('شعبه')
-                            ->placeholder('-'),
                         TextEntry::make('period')
                             ->label('دوره گزارش')
                             ->jalaliDate()

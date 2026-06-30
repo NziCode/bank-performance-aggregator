@@ -18,19 +18,18 @@ class UploadController extends Controller
         $request->validate([
             'files'   => ['required', 'array', 'min:1', 'max:50'],
             'files.*' => ['required', 'file', 'mimes:xlsx', 'max:10240'],
-            'period'  => ['nullable', 'string', 'regex:/^\d{6}$/'],
+            'period'  => ['nullable', 'date'],
         ]);
 
         $uploadIds = [];
 
         foreach ($request->file('files') as $file) {
-            $period = $request->input('period', now()->format('Ym'));
+            $period = $request->input('period', now()->toDateString());
             $path   = $file->store("excel-uploads/{$period}", 'local');
 
             $upload = Upload::create([
                 'original_filename' => $file->getClientOriginalName(),
                 'stored_path'       => $path,
-                'branch_code'       => $this->extractBranchCode($file->getClientOriginalName()),
                 'period'            => $period,
                 'uploaded_by'       => auth()->id(),
             ]);
@@ -59,14 +58,11 @@ class UploadController extends Controller
         ]);
     }
 
-    // --- Web ---
+    // --- Web (در صورت استفاده مستقل از Filament) ---
 
     public function webIndex(): View
     {
-        $uploads = Upload::with('branch')
-            ->orderByDesc('created_at')
-            ->paginate(15);
-
+        $uploads = Upload::orderByDesc('created_at')->paginate(15);
         return view('uploads.index', compact('uploads'));
     }
 
@@ -75,17 +71,16 @@ class UploadController extends Controller
         $request->validate([
             'files'   => ['required', 'array', 'min:1', 'max:50'],
             'files.*' => ['required', 'file', 'mimes:xlsx', 'max:10240'],
-            'period'  => ['nullable', 'string', 'regex:/^\d{6}$/'],
+            'period'  => ['nullable', 'date'],
         ]);
 
         foreach ($request->file('files') as $file) {
-            $period = $request->input('period', now()->format('Ym'));
+            $period = $request->input('period', now()->toDateString());
             $path   = $file->store("excel-uploads/{$period}", 'local');
 
             $upload = Upload::create([
                 'original_filename' => $file->getClientOriginalName(),
                 'stored_path'       => $path,
-                'branch_code'       => $this->extractBranchCode($file->getClientOriginalName()),
                 'period'            => $period,
                 'uploaded_by'       => auth()->id(),
             ]);
@@ -95,13 +90,5 @@ class UploadController extends Controller
 
         return redirect()->route('uploads.index')
             ->with('success', 'فایل‌ها با موفقیت در صف پردازش قرار گرفتند');
-    }
-
-    // --- Helper ---
-
-    private function extractBranchCode(string $filename): ?int
-    {
-        $name = pathinfo($filename, PATHINFO_FILENAME);
-        return is_numeric($name) ? (int) $name : null;
     }
 }
