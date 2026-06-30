@@ -14,7 +14,7 @@ return new class extends Migration
             $table->string('stored_path', 500);
             $table->unsignedInteger('branch_code')->nullable();
             $table->foreign('branch_code')->references('code')->on('branches')->nullOnDelete();
-            $table->string('period', 6)->nullable()->comment('دوره گزارش YYYYMM');
+            $table->date('period')->nullable()->comment('دوره گزارش');
             $table->enum('status', ['pending', 'processing', 'completed', 'failed'])->default('pending');
             $table->unsignedInteger('rows_processed')->default(0);
             $table->unsignedInteger('rows_rejected')->default(0);

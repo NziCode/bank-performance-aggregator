@@ -23,10 +23,10 @@ class PerformancesTable
                     ->label('تاریخ')
                     ->jalaliDate()
                     ->sortable(),
-                TextColumn::make('branch.name')
-                    ->label('شعبه')
-                    ->sortable()
-                    ->searchable(),
+                TextColumn::make('workplace_label')
+                    ->label('محل خدمت')
+                    ->getStateUsing(fn($record) => $record->workplace_label)
+                    ->wrap(),
                 TextColumn::make('employee.first_name')
                     ->label('همکار')
                     ->formatStateUsing(fn($record) => $record->employee?->full_name)
@@ -80,6 +80,14 @@ class PerformancesTable
                 SelectFilter::make('service_type_id')
                     ->label('نوع خدمت')
                     ->relationship('serviceType', 'name'),
+                SelectFilter::make('workplace_type')
+                    ->label('نوع محل خدمت')
+                    ->options([
+                        'branch'        => 'شعبه',
+                        'branch_office' => 'باجه',
+                        'zone'          => 'حوزه',
+                        'staff'         => 'ستاد',
+                    ]),
                 SelectFilter::make('branch_code')
                     ->label('شعبه')
                     ->relationship('branch', 'name'),

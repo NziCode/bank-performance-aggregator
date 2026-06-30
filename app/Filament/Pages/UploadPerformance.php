@@ -47,8 +47,8 @@ class UploadPerformance extends Page
                 DatePicker::make('period')
                     ->label('دوره گزارش')
                     ->jalali()
-                    ->displayFormat('Y/m')
-                    ->helperText('ماه و سال گزارش را انتخاب کنید')
+                    ->displayFormat('Y/m/d')
+                    ->helperText('تاریخ دوره گزارش را انتخاب کنید')
                     ->required()
                     ->columnSpanFull(),
                 FileUpload::make('files')
@@ -73,9 +73,7 @@ class UploadPerformance extends Page
         $originalNames = $data['original_filenames'] ?? [];
         $count         = 0;
 
-        // تبدیل تاریخ میلادی به دوره شمسی YYYYMM
-        $jalali = Jalalian::fromCarbon(Carbon::parse($data['period']));
-        $period = $jalali->getYear() . str_pad($jalali->getMonth(), 2, '0', STR_PAD_LEFT);
+        $period = Carbon::parse($data['period'])->toDateString();
 
         foreach ($files as $file) {
             $sourcePath   = storage_path('app/private/' . $file);

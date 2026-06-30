@@ -38,12 +38,12 @@ class ProcessUploadedFileJob implements ShouldQueue
         try {
             $parsed = $parser->parse(Storage::path($upload->stored_path));
 
-            $serviceTypes    = ServiceType::pluck('id', 'name');
-            $errors          = [];
-            $saved           = 0;
-            $branchCodeCache = [];
+            $serviceTypes = ServiceType::pluck('id', 'name');
+            $errors       = [];
+            $saved        = 0;
+            $userCache    = []; // personnel_code => User|null
 
-            DB::transaction(function () use ($parsed, $upload, $serviceTypes, &$saved, &$errors, &$branchCodeCache) {
+            DB::transaction(function () use ($parsed, $upload, $serviceTypes, &$saved, &$errors, &$userCache) {
 
                 // پردازش شیت خدمات نوین
                 foreach ($parsed['banking_service'] as $row) {
@@ -58,8 +58,8 @@ class ProcessUploadedFileJob implements ShouldQueue
                         continue;
                     }
 
-                    $branchCode = $this->getBranchCode($row['personnel_code'], $branchCodeCache);
-                    if (! $branchCode) {
+                    $user = $this->resolveUser($row['personnel_code'], $userCache);
+                    if (! $user) {
                         $errors[] = [
                             'row'    => $row['row_number'],
                             'sheet'  => 'خدمات نوین',
@@ -78,17 +78,19 @@ class ProcessUploadedFileJob implements ShouldQueue
                         continue;
                     }
 
-                    Performance::create([
-                        'date'                 => $date,
-                        'branch_code'          => $branchCode,
-                        'personnel_code'       => $row['personnel_code'],
-                        'service_type_id'      => $serviceTypeId,
-                        'customer_account'     => $row['customer_account'],
-                        'customer_name'        => $row['customer_name'],
-                        'notes'                => $row['notes'] ?: null,
-                        'upload_id'            => $upload->id,
-                        'validation_status_id' => 1,
-                    ]);
+                    Performance::create(array_merge(
+                        [
+                            'date'                 => $date,
+                            'personnel_code'       => $row['personnel_code'],
+                            'service_type_id'      => $serviceTypeId,
+                            'customer_account'     => $row['customer_account'],
+                            'customer_name'        => $row['customer_name'],
+                            'notes'                => $row['notes'] ?: null,
+                            'upload_id'            => $upload->id,
+                            'validation_status_id' => 1,
+                        ],
+                        $this->snapshotWorkplace($user)
+                    ));
 
                     $saved++;
                 }
@@ -97,8 +99,8 @@ class ProcessUploadedFileJob implements ShouldQueue
                 $posServiceId = $serviceTypes['پایش پایانه فروش'] ?? null;
 
                 foreach ($parsed['pos_monitoring'] as $row) {
-                    $branchCode = $this->getBranchCode($row['personnel_code'], $branchCodeCache);
-                    if (! $branchCode) {
+                    $user = $this->resolveUser($row['personnel_code'], $userCache);
+                    if (! $user) {
                         $errors[] = [
                             'row'    => $row['row_number'],
                             'sheet'  => 'پایش پایانه های فروش',
@@ -117,19 +119,21 @@ class ProcessUploadedFileJob implements ShouldQueue
                         continue;
                     }
 
-                    Performance::create([
-                        'date'                 => $date,
-                        'branch_code'          => $branchCode,
-                        'personnel_code'       => $row['personnel_code'],
-                        'service_type_id'      => $posServiceId,
-                        'customer_account'     => $row['customer_account'],
-                        'customer_name'        => $row['customer_name'],
-                        'terminal_number'      => $row['terminal_number'] ?: null,
-                        'colleague_account'    => $row['colleague_account'] ?: null,
-                        'notes'                => $row['notes'] ?: null,
-                        'upload_id'            => $upload->id,
-                        'validation_status_id' => 1,
-                    ]);
+                    Performance::create(array_merge(
+                        [
+                            'date'                 => $date,
+                            'personnel_code'       => $row['personnel_code'],
+                            'service_type_id'      => $posServiceId,
+                            'customer_account'     => $row['customer_account'],
+                            'customer_name'        => $row['customer_name'],
+                            'terminal_number'      => $row['terminal_number'] ?: null,
+                            'colleague_account'    => $row['colleague_account'] ?: null,
+                            'notes'                => $row['notes'] ?: null,
+                            'upload_id'            => $upload->id,
+                            'validation_status_id' => 1,
+                        ],
+                        $this->snapshotWorkplace($user)
+                    ));
 
                     $saved++;
                 }
@@ -149,13 +153,32 @@ class ProcessUploadedFileJob implements ShouldQueue
         }
     }
 
-    private function getBranchCode(string $personnelCode, array &$cache): ?int
+    /**
+     * فقط کاربر را بر اساس کد پرسنلی پیدا می‌کند (یا null در صورت نامعتبر بودن).
+     */
+    private function resolveUser(string $personnelCode, array &$cache): ?User
     {
-        if (! isset($cache[$personnelCode])) {
-            $user = User::where('personnel_code', $personnelCode)->select('branch_code')->first();
-            $cache[$personnelCode] = $user?->branch_code;
+        if (array_key_exists($personnelCode, $cache)) {
+            return $cache[$personnelCode];
         }
-        return $cache[$personnelCode];
+
+        return $cache[$personnelCode] = User::where('personnel_code', $personnelCode)->first();
+    }
+
+    /**
+     * محل خدمت فعلی کارمند را در لحظه ثبت عملکرد snapshot می‌گیرد.
+     * این مقادیر دیگر هیچ‌گاه تغییر نمی‌کنند، حتی اگر کارمند بعداً جابجا شود —
+     * در نتیجه گزارش‌های گذشته همیشه به محل خدمت واقعی آن زمان اشاره می‌کنند.
+     */
+    private function snapshotWorkplace(User $user): array
+    {
+        return [
+            'workplace_type'   => $user->workplace_type,
+            'branch_code'      => $user->workplace_type === 'branch' ? $user->branch_code : null,
+            'zone_code'        => $user->workplace_type === 'zone' ? $user->zone_code : null,
+            'branch_office_id' => $user->workplace_type === 'branch_office' ? $user->branch_office_id : null,
+            'staff_unit_code'  => $user->workplace_type === 'staff' ? $user->staff_unit_code : null,
+        ];
     }
 
     private function parseDate(string $date): ?string
@@ -163,7 +186,6 @@ class ProcessUploadedFileJob implements ShouldQueue
         $date = trim($date);
         if (empty($date)) return null;
 
-        // فرمت YYYYMMDD شمسی
         if (preg_match('/^(\d{4})(\d{2})(\d{2})$/', $date, $m)) {
             try {
                 $jalali = Jalalian::fromFormat('Y/m/d', "{$m[1]}/{$m[2]}/{$m[3]}");

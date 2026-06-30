@@ -24,6 +24,7 @@ class UploadsTable
                     ->searchable(),
                 TextColumn::make('period')
                     ->label('دوره')
+                    ->jalaliDate()
                     ->sortable(),
                 TextColumn::make('status')
                     ->label('وضعیت')

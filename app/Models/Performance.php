@@ -9,8 +9,12 @@ class Performance extends Model
 {
     protected $fillable = [
         'date',
-        'branch_code',
         'personnel_code',
+        'workplace_type',
+        'branch_code',
+        'zone_code',
+        'branch_office_id',
+        'staff_unit_code',
         'service_type_id',
         'customer_account',
         'customer_name',
@@ -29,14 +33,31 @@ class Performance extends Model
         'validated_at' => 'datetime',
     ];
 
+    public function employee(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'personnel_code', 'personnel_code');
+    }
+
+    // --- محل خدمت snapshot شده در زمان ثبت عملکرد ---
+
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class, 'branch_code', 'code');
     }
 
-    public function employee(): BelongsTo
+    public function zone(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'personnel_code', 'personnel_code');
+        return $this->belongsTo(Zone::class, 'zone_code', 'code');
+    }
+
+    public function branchOffice(): BelongsTo
+    {
+        return $this->belongsTo(BranchOffice::class, 'branch_office_id');
+    }
+
+    public function staffUnit(): BelongsTo
+    {
+        return $this->belongsTo(StaffUnit::class, 'staff_unit_code', 'code');
     }
 
     public function serviceType(): BelongsTo
@@ -84,13 +105,35 @@ class Performance extends Model
         return $query->where('personnel_code', $personnelCode);
     }
 
-    public function scopeForDateRange($query, string $from, string $to)
+    public function scopeForPeriod($query, string $from, string $to)
     {
         return $query->whereBetween('date', [$from, $to]);
     }
 
-    public function scopeForPeriod($query, string $from, string $to)
+    /**
+     * متن نمایشی محل خدمت — بر اساس snapshot ذخیره‌شده در همین رکورد
+     * (نه وضعیت فعلی کارمند)، تا گزارش‌های گذشته با جابجایی کارمند تغییر نکنند.
+     */
+    public function getWorkplaceLabelAttribute(): ?string
     {
-        return $query->whereBetween('date', [$from, $to]);
+        return match ($this->workplace_type) {
+            'branch' => $this->branch
+                ? "شعبه {$this->branch->name} - {$this->branch->code}"
+                : null,
+
+            'branch_office' => $this->branchOffice
+                ? "باجه {$this->branchOffice->name} - {$this->branchOffice->branch_code}"
+                : null,
+
+            'zone' => $this->zone
+                ? "حوزه {$this->zone->name} - {$this->zone->code}"
+                : null,
+
+            'staff' => $this->staffUnit
+                ? "{$this->staffUnit->name} - {$this->staffUnit->code}"
+                : null,
+
+            default => null,
+        };
     }
 }
