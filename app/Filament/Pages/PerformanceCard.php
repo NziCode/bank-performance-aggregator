@@ -66,7 +66,7 @@ class PerformanceCard extends Page
                     ->options(function ($get) {
                         return match ($get('level')) {
                             'employee'      => User::all()->mapWithKeys(fn($u) => [$u->personnel_code => $u->full_name . ' - ' . $u->personnel_code]),
-                            'branch'        => Branch::orderBy('name')->pluck('name', 'code'),
+                            'branch'        => Branch::orderBy('code')->get()->mapWithKeys(fn($b) => [$b->code => $b->name . ' - ' . $b->code]),
                             'branch_office' => BranchOffice::orderBy('name')->pluck('name', 'id'),
                             'zone'          => Zone::pluck('name', 'code'),
                             'staff'         => StaffUnit::pluck('name', 'code'),
