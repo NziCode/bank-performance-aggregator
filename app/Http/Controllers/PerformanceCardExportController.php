@@ -33,31 +33,62 @@ class PerformanceCardExportController extends Controller
             'format'      => ['required', 'in:excel,pdf'],
         ]);
 
-        $level             = $request->level;
-        $entityId          = $request->entity_id;
-        $from              = $request->from;
-        $to                = $request->to;
-        $includeSubOffices = $request->boolean('include_sub_offices');
-        $reportType        = $request->report_type;
-        $format            = $request->format;
+        $level           = $request->level;
+        $entityId        = $request->entity_id ?? 'all';
+        $from            = $request->from;
+        $to              = $request->to;
+        $includeSubOff   = $request->boolean('include_sub_offices');
+        $breakdownBy     = $request->breakdown_by;
+        $serviceTypeIds  = array_filter((array) $request->input('service_type_ids', []));
+        $reportType      = $request->report_type;
+        $format          = $request->format;
 
         $entityLabel = $this->resolveEntityLabel($level, $entityId);
         $levelLabel  = PerformanceReportService::levelLabels()[$level] ?? $level;
 
+        // ─── breakdown summary ─────────────────────────────────────────────────
+        if ($reportType === 'summary' && $breakdownBy) {
+            $result = $service->breakdownSummary($level, $entityId, $from, $to, $breakdownBy, $serviceTypeIds);
+            return $format === 'pdf'
+                ? $this->breakdownPdf($result, $entityLabel, $levelLabel, $entityId, $from, $to)
+                : $this->breakdownExcel($result, $entityLabel, $levelLabel, $entityId, $from, $to);
+        }
+
+        // ─── normal summary ────────────────────────────────────────────────────
         if ($reportType === 'summary') {
-            $result = $service->summary($level, $entityId, $from, $to, $includeSubOffices);
+            $result = $service->summary($level, $entityId, $from, $to, $includeSubOff, $serviceTypeIds);
             return $format === 'pdf'
                 ? $this->summaryPdf($result, $entityLabel, $levelLabel, $entityId, $from, $to)
                 : $this->summaryExcel($result, $entityLabel, $levelLabel, $entityId, $from, $to);
         }
 
-        $records = $service->detailed($level, $entityId, $from, $to, $includeSubOffices);
+        // ─── detailed ──────────────────────────────────────────────────────────
+        $records = $service->detailed($level, $entityId, $from, $to, $includeSubOff, $serviceTypeIds);
         return $format === 'pdf'
             ? $this->detailedPdf($records, $entityLabel, $levelLabel, $entityId, $from, $to)
             : $this->detailedExcel($records, $entityLabel, $levelLabel, $entityId, $from, $to);
     }
 
     // ─── PDF ───────────────────────────────────────────────────────────────────
+
+    private function breakdownPdf(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
+    {
+        $html = view('exports.performance-card-breakdown-pdf', [
+            'result'      => $result,
+            'entityLabel' => $entityLabel,
+            'levelLabel'  => $levelLabel,
+            'entityId'    => $entityId,
+            'fromJalali'  => $this->jalali($from),
+            'toJalali'    => $this->jalali($to),
+            'reportDate'  => $this->jalali(now()->toDateString()),
+            'preparedBy'  => $this->preparedBy,
+        ])->render();
+
+        return PdfService::download(
+            PdfService::make($html, 'L'),
+            'performance-card-breakdown.pdf'
+        );
+    }
 
     private function summaryPdf(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
     {
@@ -98,6 +129,76 @@ class PerformanceCardExportController extends Controller
     }
 
     // ─── Excel ─────────────────────────────────────────────────────────────────
+
+    private function breakdownExcel(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet       = $spreadsheet->getActiveSheet();
+        $sheet->setRightToLeft(true);
+        $sheet->setTitle('ریزبندی');
+
+        $serviceCount  = count($result['service_types']);
+        $lastCol       = $serviceCount + 2; // label + services + grand_total
+        $lastLetter    = Coordinate::stringFromColumnIndex($lastCol);
+
+        $sheet->getCell('A1')->setValue('کارنامه — ' . $levelLabel . ': ' . $entityLabel . ' — ریزبندی بر اساس ' . $result['breakdown_label']);
+        $sheet->mergeCells('A1:' . $lastLetter . '1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(13);
+
+        $sheet->getCell('A2')->setValue('بازه گزارش: ' . $this->jalali($from) . ' تا ' . $this->jalali($to) . '     تاریخ اخذ: ' . $this->jalali(now()->toDateString()));
+        $sheet->mergeCells('A2:' . $lastLetter . '2');
+        $sheet->getStyle('A2')->getFont()->setItalic(true)->setSize(9)->getColor()->setRGB('6b7280');
+
+        $headerRow = 4;
+        $sheet->getCell('A' . $headerRow)->setValue($result['breakdown_label']);
+        $col = 2;
+        foreach ($result['service_types'] as $type) {
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $headerRow)->setValue($type);
+            $col++;
+        }
+        $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $headerRow)->setValue('جمع کل');
+        $this->styleHeader($sheet, $headerRow, $lastCol);
+        $sheet->getStyle('A' . $headerRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
+        $row = $headerRow + 1;
+        foreach ($result['rows'] as $idx => $breakRow) {
+            $sheet->getCell('A' . $row)->setValue($breakRow['label']);
+            $col = 2;
+            foreach ($result['service_types'] as $type) {
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue($this->fmtCell($breakRow['services'][$type]));
+                $col++;
+            }
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue($breakRow['grand_total']['all']);
+            $sheet->getStyle(Coordinate::stringFromColumnIndex($col) . $row)->getFont()->setBold(true);
+            if ($idx % 2 === 0) {
+                $sheet->getStyle('A' . $row . ':' . $lastLetter . $row)->getFill()
+                    ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('f9fafb');
+            }
+            $row++;
+        }
+
+        // total row
+        $sheet->getCell('A' . $row)->setValue('جمع کل');
+        $col = 2;
+        foreach ($result['service_types'] as $type) {
+            $totAll = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 'all'));
+            $totApp = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 2));
+            $totPen = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 1));
+            $totRej = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 3));
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue("{$totAll} ({$totApp}/{$totPen}/{$totRej})");
+            $col++;
+        }
+        $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue($result['grand_total']['all']);
+        $sheet->getStyle('A' . $row . ':' . $lastLetter . $row)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $row . ':' . $lastLetter . $row)->getFill()
+            ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('eff6ff');
+
+        foreach (range(1, $lastCol) as $c) {
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setAutoSize(true);
+        }
+
+        return $this->streamExcel($spreadsheet, 'performance-card-breakdown.xlsx');
+    }
 
     private function summaryExcel(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
     {
