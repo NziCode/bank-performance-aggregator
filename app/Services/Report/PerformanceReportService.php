@@ -124,6 +124,8 @@ class PerformanceReportService
         $query = Performance::query()->whereBetween('date', [$from, $to]);
 
         return match ($level) {
+            'province'           => $query,
+
             self::LEVEL_EMPLOYEE => $query->where('personnel_code', $entityId),
 
             self::LEVEL_BRANCH => $includeSubOffices
@@ -149,6 +151,7 @@ class PerformanceReportService
     public static function levelLabels(): array
     {
         return [
+            'province'              => 'کل استان',
             self::LEVEL_EMPLOYEE      => 'کارمند',
             self::LEVEL_BRANCH        => 'شعبه',
             self::LEVEL_BRANCH_OFFICE => 'باجه',

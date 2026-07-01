@@ -57,7 +57,7 @@ class PerformanceCard extends Page
                     ->options(PerformanceReportService::levelLabels())
                     ->required()
                     ->live()
-                    ->afterStateUpdated(fn($set) => $set('entity_id', null)),
+                    ->afterStateUpdated(fn($state, $set) => $set('entity_id', $state === 'province' ? 'all' : null)),
 
                 Select::make('entity_id')
                     ->label('انتخاب موجودیت')
@@ -73,7 +73,7 @@ class PerformanceCard extends Page
                             default         => [],
                         };
                     })
-                    ->visible(fn($get) => filled($get('level'))),
+                    ->visible(fn($get) => filled($get('level')) && $get('level') !== 'province'),
 
                 Select::make('report_type')
                     ->label('نوع کارنامه')
@@ -180,6 +180,7 @@ class PerformanceCard extends Page
     private function resolveEntityLabel(string $level, string|int $entityId): ?string
     {
         return match ($level) {
+            'province'      => 'کل استان',
             'employee'      => User::where('personnel_code', $entityId)->first()?->full_name,
             'branch'        => Branch::where('code', $entityId)->first()?->name,
             'branch_office' => BranchOffice::find($entityId)?->name,

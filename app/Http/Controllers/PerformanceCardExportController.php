@@ -26,7 +26,7 @@ class PerformanceCardExportController extends Controller
     {
         $request->validate([
             'level'       => ['required', 'string'],
-            'entity_id'   => ['required'],
+            'entity_id'   => ['required_unless:level,province'],
             'from'        => ['required', 'date'],
             'to'          => ['required', 'date'],
             'report_type' => ['required', 'in:summary,detailed'],
@@ -301,6 +301,7 @@ class PerformanceCardExportController extends Controller
     private function resolveEntityLabel(string $level, $entityId): ?string
     {
         return match ($level) {
+            'province'      => 'کل استان',
             'employee'      => User::where('personnel_code', $entityId)->first()?->full_name,
             'branch'        => Branch::where('code', $entityId)->first()?->name,
             'branch_office' => BranchOffice::find($entityId)?->name,
