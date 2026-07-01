@@ -118,10 +118,12 @@ class PerformanceCard extends Page
 
         $includeSubOffices = $data['include_sub_offices'] ?? false;
 
-        $this->entityLabel = $this->resolveEntityLabel($data['level'], $data['entity_id']);
+        $entityId = $data['entity_id'] ?? 'all';
+
+        $this->entityLabel = $this->resolveEntityLabel($data['level'], $entityId);
 
         if ($data['report_type'] === 'detailed') {
-            $records = $service->detailed($data['level'], $data['entity_id'], $from, $to, $includeSubOffices);
+            $records = $service->detailed($data['level'], $entityId, $from, $to, $includeSubOffices);
 
             if ($records->isEmpty()) {
                 Notification::make()->title('رکوردی یافت نشد')->warning()->send();
@@ -133,7 +135,7 @@ class PerformanceCard extends Page
             $this->detailedResult = $records->toArray();
             $this->summaryResult  = null;
         } else {
-            $result = $service->summary($data['level'], $data['entity_id'], $from, $to, $includeSubOffices);
+            $result = $service->summary($data['level'], $entityId, $from, $to, $includeSubOffices);
 
             if ($result['grand_total']['all'] === 0) {
                 Notification::make()->title('رکوردی یافت نشد')->warning()->send();
@@ -153,7 +155,7 @@ class PerformanceCard extends Page
 
         return redirect()->route('reports.performance-card.export', [
             'level'                => $data['level'],
-            'entity_id'            => $data['entity_id'],
+            'entity_id'            => $data['entity_id'] ?? 'all',
             'from'                 => Carbon::parse($data['from'])->toDateString(),
             'to'                   => Carbon::parse($data['to'])->toDateString(),
             'report_type'          => $data['report_type'],
@@ -168,7 +170,7 @@ class PerformanceCard extends Page
 
         return redirect()->route('reports.performance-card.export', [
             'level'                => $data['level'],
-            'entity_id'            => $data['entity_id'],
+            'entity_id'            => $data['entity_id'] ?? 'all',
             'from'                 => Carbon::parse($data['from'])->toDateString(),
             'to'                   => Carbon::parse($data['to'])->toDateString(),
             'report_type'          => $data['report_type'],
