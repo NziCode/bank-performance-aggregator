@@ -47,11 +47,15 @@ class PerformanceCardExportController extends Controller
         $levelLabel  = PerformanceReportService::levelLabels()[$level] ?? $level;
 
         // ─── breakdown summary ─────────────────────────────────────────────────
-        if ($reportType === 'summary' && $breakdownBy) {
-            $result = $service->breakdownSummary($level, $entityId, $from, $to, $breakdownBy, $serviceTypeIds);
+        $breakdownKeys = array_filter((array) $request->input('breakdown_by', []));
+        if ($reportType === 'summary' && !empty($breakdownKeys)) {
+            $results = [];
+            foreach ($breakdownKeys as $bd) {
+                $results[] = $service->breakdownSummary($level, $entityId, $from, $to, $bd, $serviceTypeIds);
+            }
             return $format === 'pdf'
-                ? $this->breakdownPdf($result, $entityLabel, $levelLabel, $entityId, $from, $to)
-                : $this->breakdownExcel($result, $entityLabel, $levelLabel, $entityId, $from, $to);
+                ? $this->breakdownPdf($results, $entityLabel, $levelLabel, $entityId, $from, $to)
+                : $this->breakdownExcel($results, $entityLabel, $levelLabel, $entityId, $from, $to);
         }
 
         // ─── normal summary ────────────────────────────────────────────────────
@@ -71,10 +75,10 @@ class PerformanceCardExportController extends Controller
 
     // ─── PDF ───────────────────────────────────────────────────────────────────
 
-    private function breakdownPdf(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
+    private function breakdownPdf(array $results, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
     {
         $html = view('exports.performance-card-breakdown-pdf', [
-            'result'      => $result,
+            'results'     => $results,
             'entityLabel' => $entityLabel,
             'levelLabel'  => $levelLabel,
             'entityId'    => $entityId,
@@ -130,18 +134,19 @@ class PerformanceCardExportController extends Controller
 
     // ─── Excel ─────────────────────────────────────────────────────────────────
 
-    private function breakdownExcel(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
+    private function breakdownExcel(array $results, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
     {
         $spreadsheet = new Spreadsheet();
         $sheet       = $spreadsheet->getActiveSheet();
         $sheet->setRightToLeft(true);
         $sheet->setTitle('ریزبندی');
 
-        $serviceCount  = count($result['service_types']);
-        $lastCol       = $serviceCount + 2; // label + services + grand_total
-        $lastLetter    = Coordinate::stringFromColumnIndex($lastCol);
+        $maxServiceCount = max(array_map(fn($r) => count($r['service_types']), $results));
+        $totalCols       = 1 + $maxServiceCount * 4 + 4;
+        $lastLetter      = Coordinate::stringFromColumnIndex($totalCols);
 
-        $sheet->getCell('A1')->setValue('کارنامه — ' . $levelLabel . ': ' . $entityLabel . ' — ریزبندی بر اساس ' . $result['breakdown_label']);
+        $labels = implode('، ', array_column($results, 'breakdown_label'));
+        $sheet->getCell('A1')->setValue('کارنامه — ' . $levelLabel . ': ' . $entityLabel . ' — ریزبندی: ' . $labels);
         $sheet->mergeCells('A1:' . $lastLetter . '1');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(13);
 
@@ -149,51 +154,100 @@ class PerformanceCardExportController extends Controller
         $sheet->mergeCells('A2:' . $lastLetter . '2');
         $sheet->getStyle('A2')->getFont()->setItalic(true)->setSize(9)->getColor()->setRGB('6b7280');
 
-        $headerRow = 4;
-        $sheet->getCell('A' . $headerRow)->setValue($result['breakdown_label']);
-        $col = 2;
-        foreach ($result['service_types'] as $type) {
-            $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $headerRow)->setValue($type);
-            $col++;
-        }
-        $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $headerRow)->setValue('جمع کل');
-        $this->styleHeader($sheet, $headerRow, $lastCol);
-        $sheet->getStyle('A' . $headerRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $row = 4;
+        foreach ($results as $result) {
+            $serviceCount = count($result['service_types']);
+            $secCols      = 1 + $serviceCount * 4 + 4;
+            $secLetter    = Coordinate::stringFromColumnIndex($secCols);
 
-        $row = $headerRow + 1;
-        foreach ($result['rows'] as $idx => $breakRow) {
-            $sheet->getCell('A' . $row)->setValue($breakRow['label']);
+            // Section title
+            $sheet->getCell('A' . $row)->setValue('آمار به تفکیک ' . $result['breakdown_label']);
+            $sheet->mergeCells('A' . $row . ':' . $secLetter . $row);
+            $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(11);
+            $sheet->getStyle('A' . $row)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('dbeafe');
+            $row++;
+
+            $hr1 = $row;
+            $hr2 = $row + 1;
+
+            $sheet->mergeCells('A' . $hr1 . ':A' . $hr2);
+            $sheet->getCell('A' . $hr1)->setValue($result['breakdown_label']);
+
             $col = 2;
             foreach ($result['service_types'] as $type) {
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue($this->fmtCell($breakRow['services'][$type]));
-                $col++;
+                $s = Coordinate::stringFromColumnIndex($col);
+                $e = Coordinate::stringFromColumnIndex($col + 3);
+                $sheet->mergeCells($s . $hr1 . ':' . $e . $hr1);
+                $sheet->getCell($s . $hr1)->setValue($type);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $hr2)->setValue('کل');
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $hr2)->setValue('تایید');
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $hr2)->setValue('انتظار');
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $hr2)->setValue('رد');
+                $col += 4;
             }
-            $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue($breakRow['grand_total']['all']);
-            $sheet->getStyle(Coordinate::stringFromColumnIndex($col) . $row)->getFont()->setBold(true);
-            if ($idx % 2 === 0) {
-                $sheet->getStyle('A' . $row . ':' . $lastLetter . $row)->getFill()
-                    ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('f9fafb');
+            $s = Coordinate::stringFromColumnIndex($col);
+            $e = Coordinate::stringFromColumnIndex($col + 3);
+            $sheet->mergeCells($s . $hr1 . ':' . $e . $hr1);
+            $sheet->getCell($s . $hr1)->setValue('جمع کل');
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $hr2)->setValue('کل');
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $hr2)->setValue('تایید');
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $hr2)->setValue('انتظار');
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $hr2)->setValue('رد');
+
+            $this->styleHeader($sheet, $hr1, $secCols);
+            $this->styleHeader($sheet, $hr2, $secCols);
+            $sheet->getStyle('A' . $hr1)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
+            $row = $hr2 + 1;
+            foreach ($result['rows'] as $idx => $breakRow) {
+                $sheet->getCell('A' . $row)->setValue($breakRow['label']);
+                $col = 2;
+                foreach ($result['service_types'] as $type) {
+                    $cell = $breakRow['services'][$type];
+                    $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($cell['all']);
+                    $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($cell[2]);
+                    $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($cell[1]);
+                    $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($cell[3]);
+                    $col += 4;
+                }
+                $gt = $breakRow['grand_total'];
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($gt['all']);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($gt[2]);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($gt[1]);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($gt[3]);
+                if ($idx % 2 === 0) {
+                    $sheet->getStyle('A' . $row . ':' . $secLetter . $row)->getFill()
+                        ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('f9fafb');
+                }
+                $row++;
             }
-            $row++;
+
+            // Total row for this section
+            $sheet->getCell('A' . $row)->setValue('جمع کل');
+            $col = 2;
+            foreach ($result['service_types'] as $type) {
+                $totAll = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 'all'));
+                $totApp = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 2));
+                $totPen = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 1));
+                $totRej = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 3));
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($totAll);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($totApp);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($totPen);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($totRej);
+                $col += 4;
+            }
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($result['grand_total']['all']);
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($result['grand_total'][2]);
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($result['grand_total'][1]);
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($result['grand_total'][3]);
+            $sheet->getStyle('A' . $row . ':' . $secLetter . $row)->getFont()->setBold(true);
+            $sheet->getStyle('A' . $row . ':' . $secLetter . $row)->getFill()
+                ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('eff6ff');
+
+            $row += 2; // blank row between sections
         }
 
-        // total row
-        $sheet->getCell('A' . $row)->setValue('جمع کل');
-        $col = 2;
-        foreach ($result['service_types'] as $type) {
-            $totAll = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 'all'));
-            $totApp = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 2));
-            $totPen = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 1));
-            $totRej = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 3));
-            $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue("{$totAll} ({$totApp}/{$totPen}/{$totRej})");
-            $col++;
-        }
-        $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue($result['grand_total']['all']);
-        $sheet->getStyle('A' . $row . ':' . $lastLetter . $row)->getFont()->setBold(true);
-        $sheet->getStyle('A' . $row . ':' . $lastLetter . $row)->getFill()
-            ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('eff6ff');
-
-        foreach (range(1, $lastCol) as $c) {
+        foreach (range(1, $totalCols) as $c) {
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setAutoSize(true);
         }
 
@@ -273,46 +327,75 @@ class PerformanceCardExportController extends Controller
         // ─── ریز همکاران ───
         if (count($result['by_employee']) > 1) {
             $serviceCount  = count($result['service_types']);
-            $empLastCol    = $serviceCount + 4; // A=کد، B=نام، C=محل + services + جمع
-            $empLastLetter = Coordinate::stringFromColumnIndex($empLastCol);
+            $empTotalCols  = 3 + $serviceCount * 4 + 4; // code + name + workplace + (4 per service) + 4 grand total
+            $empLastLetter = Coordinate::stringFromColumnIndex($empTotalCols);
 
             $row += 2;
             $sheet->getCell('A' . $row)->setValue('ریز عملکرد به تفکیک همکار');
             $sheet->mergeCells('A' . $row . ':' . $empLastLetter . $row);
             $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(11);
 
-            $row++;
-            $sheet->getCell('A' . $row)->setValue('کد پرسنلی');
-            $sheet->getCell('B' . $row)->setValue('نام همکار');
-            $sheet->getCell('C' . $row)->setValue('محل خدمت');
+            $hr1 = $row + 1;
+            $hr2 = $row + 2;
+
+            $sheet->mergeCells('A' . $hr1 . ':A' . $hr2);
+            $sheet->getCell('A' . $hr1)->setValue('کد پرسنلی');
+            $sheet->mergeCells('B' . $hr1 . ':B' . $hr2);
+            $sheet->getCell('B' . $hr1)->setValue('نام همکار');
+            $sheet->mergeCells('C' . $hr1 . ':C' . $hr2);
+            $sheet->getCell('C' . $hr1)->setValue('محل خدمت');
+
             $col = 4;
             foreach ($result['service_types'] as $type) {
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue($type);
-                $col++;
+                $s = Coordinate::stringFromColumnIndex($col);
+                $e = Coordinate::stringFromColumnIndex($col + 3);
+                $sheet->mergeCells($s . $hr1 . ':' . $e . $hr1);
+                $sheet->getCell($s . $hr1)->setValue($type);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $hr2)->setValue('کل');
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $hr2)->setValue('تایید');
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $hr2)->setValue('انتظار');
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $hr2)->setValue('رد');
+                $col += 4;
             }
-            $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue('جمع');
-            $this->styleHeader($sheet, $row, $empLastCol);
-            $sheet->getStyle('A' . $row . ':C' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+            $s = Coordinate::stringFromColumnIndex($col);
+            $e = Coordinate::stringFromColumnIndex($col + 3);
+            $sheet->mergeCells($s . $hr1 . ':' . $e . $hr1);
+            $sheet->getCell($s . $hr1)->setValue('جمع');
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $hr2)->setValue('کل');
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $hr2)->setValue('تایید');
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $hr2)->setValue('انتظار');
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $hr2)->setValue('رد');
 
+            $this->styleHeader($sheet, $hr1, $empTotalCols);
+            $this->styleHeader($sheet, $hr2, $empTotalCols);
+            $sheet->getStyle('A' . $hr1 . ':C' . $hr1)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
+            $row = $hr2 + 1;
             foreach ($result['by_employee'] as $idx => $emp) {
-                $row++;
                 $sheet->getCell('A' . $row)->setValue($emp['personnel_code']);
                 $sheet->getCell('B' . $row)->setValue($emp['full_name']);
                 $sheet->getCell('C' . $row)->setValue($emp['workplace']);
                 $col = 4;
                 foreach ($result['service_types'] as $type) {
-                    $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue($this->fmtCell($emp['services'][$type]));
-                    $col++;
+                    $cell = $emp['services'][$type];
+                    $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($cell['all']);
+                    $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($cell[2]);
+                    $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($cell[1]);
+                    $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($cell[3]);
+                    $col += 4;
                 }
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->setValue($emp['total']['all']);
-                $sheet->getStyle(Coordinate::stringFromColumnIndex($col) . $row)->getFont()->setBold(true);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($emp['total']['all']);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($emp['total'][2]);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($emp['total'][1]);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($emp['total'][3]);
                 if ($idx % 2 === 0) {
                     $sheet->getStyle('A' . $row . ':' . $empLastLetter . $row)->getFill()
                         ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('f9fafb');
                 }
+                $row++;
             }
 
-            foreach (range(1, $empLastCol) as $c) {
+            foreach (range(1, $empTotalCols) as $c) {
                 $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setAutoSize(true);
             }
         } else {

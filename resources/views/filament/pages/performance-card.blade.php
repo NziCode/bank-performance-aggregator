@@ -28,14 +28,14 @@
         {{-- ─── نوار خلاصه سرصفحه ──────────────────────────────────────────── --}}
         @php
             $gt = $summaryResult['grand_total']
-                ?? $breakdownResult['grand_total']
+                ?? ($breakdownResult ? $breakdownResult[0]['grand_total'] : null)
                 ?? ['all' => count($detailedResult ?? []), 2 => null, 1 => null, 3 => null];
         @endphp
         <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);padding:16px 20px;margin-bottom:16px;">
             <div style="font-size:17px;font-weight:bold;color:#1e3a5f;margin-bottom:6px;">
                 {{ $entityLabel }}
                 @if($breakdownResult)
-                    — ریزبندی بر اساس {{ $breakdownResult['breakdown_label'] }}
+                    — ریزبندی: {{ collect($breakdownResult)->pluck('breakdown_label')->join('، ') }}
                 @endif
             </div>
             <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">
@@ -54,22 +54,23 @@
 
     {{-- ─── جدول ریزبندی (breakdown) ─────────────────────────────────────── --}}
     @if($breakdownResult)
+        @foreach($breakdownResult as $bResult)
         <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px;overflow:hidden;">
             <div style="padding:10px 20px;border-bottom:1px solid #f3f4f6;font-weight:600;color:#374151;font-size:13px;">
-                آمار به تفکیک {{ $breakdownResult['breakdown_label'] }}
+                آمار به تفکیک {{ $bResult['breakdown_label'] }}
             </div>
             <div style="overflow-x:auto;">
                 <table style="width:100%;border-collapse:collapse;font-size:12px;">
                     <thead>
                         <tr style="background:#1e3a5f;color:#fff;">
-                            <th rowspan="2" style="padding:10px 14px;text-align:right;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">{{ $breakdownResult['breakdown_label'] }}</th>
-                            @foreach($breakdownResult['service_types'] as $type)
+                            <th rowspan="2" style="padding:10px 14px;text-align:right;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">{{ $bResult['breakdown_label'] }}</th>
+                            @foreach($bResult['service_types'] as $type)
                                 <th colspan="4" style="padding:6px 12px;text-align:center;white-space:nowrap;border-left:1px solid #2d5a8e;border-bottom:1px solid #2d5a8e;">{{ $type }}</th>
                             @endforeach
                             <th colspan="4" style="padding:6px 12px;text-align:center;white-space:nowrap;border-left:1px solid #2d5a8e;border-bottom:1px solid #2d5a8e;">جمع کل</th>
                         </tr>
                         <tr style="background:#1e3a5f;color:#fff;">
-                            @foreach($breakdownResult['service_types'] as $type)
+                            @foreach($bResult['service_types'] as $type)
                                 <th style="padding:5px 8px;text-align:center;font-size:10px;color:#bfdbfe;border-left:1px solid #2d5a8e;">کل</th>
                                 <th style="padding:5px 8px;text-align:center;font-size:10px;color:#86efac;">تایید</th>
                                 <th style="padding:5px 8px;text-align:center;font-size:10px;color:#fde68a;">انتظار</th>
@@ -82,10 +83,10 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach($breakdownResult['rows'] as $idx => $row)
+                        @foreach($bResult['rows'] as $idx => $row)
                             <tr style="background:{{ $idx % 2 === 0 ? '#f9fafb' : '#fff' }};border-bottom:1px solid #f3f4f6;">
                                 <td style="padding:9px 14px;font-weight:500;">{{ $row['label'] }}</td>
-                                @foreach($breakdownResult['service_types'] as $type)
+                                @foreach($bResult['service_types'] as $type)
                                     @php $cell = $row['services'][$type]; @endphp
                                     <td style="padding:9px 8px;text-align:center;font-weight:bold;">{{ $cell['all'] }}</td>
                                     <td style="padding:9px 8px;text-align:center;color:#16a34a;">{{ $cell[2] }}</td>
@@ -101,10 +102,10 @@
                         {{-- ردیف جمع کل --}}
                         <tr style="background:#eff6ff;font-weight:bold;border-top:2px solid #bfdbfe;">
                             <td style="padding:10px 14px;">جمع کل</td>
-                            @foreach($breakdownResult['service_types'] as $type)
+                            @foreach($bResult['service_types'] as $type)
                                 @php
                                     $total = ['all' => 0, 2 => 0, 1 => 0, 3 => 0];
-                                    foreach ($breakdownResult['rows'] as $r) {
+                                    foreach ($bResult['rows'] as $r) {
                                         $c = $r['services'][$type];
                                         $total['all'] += $c['all']; $total[2] += $c[2]; $total[1] += $c[1]; $total[3] += $c[3];
                                     }
@@ -114,15 +115,16 @@
                                 <td style="padding:10px 8px;text-align:center;color:#ca8a04;">{{ $total[1] }}</td>
                                 <td style="padding:10px 8px;text-align:center;color:#dc2626;border-left:1px solid #bfdbfe;">{{ $total[3] }}</td>
                             @endforeach
-                            <td style="padding:10px 8px;text-align:center;color:#1e3a5f;">{{ $breakdownResult['grand_total']['all'] }}</td>
-                            <td style="padding:10px 8px;text-align:center;color:#16a34a;">{{ $breakdownResult['grand_total'][2] }}</td>
-                            <td style="padding:10px 8px;text-align:center;color:#ca8a04;">{{ $breakdownResult['grand_total'][1] }}</td>
-                            <td style="padding:10px 8px;text-align:center;color:#dc2626;">{{ $breakdownResult['grand_total'][3] }}</td>
+                            <td style="padding:10px 8px;text-align:center;color:#1e3a5f;">{{ $bResult['grand_total']['all'] }}</td>
+                            <td style="padding:10px 8px;text-align:center;color:#16a34a;">{{ $bResult['grand_total'][2] }}</td>
+                            <td style="padding:10px 8px;text-align:center;color:#ca8a04;">{{ $bResult['grand_total'][1] }}</td>
+                            <td style="padding:10px 8px;text-align:center;color:#dc2626;">{{ $bResult['grand_total'][3] }}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </div>
+        @endforeach
     @endif
 
     {{-- ─── گزارش کلی (summary) ──────────────────────────────────────────── --}}

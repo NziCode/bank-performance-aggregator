@@ -154,13 +154,25 @@
         <table>
             <thead>
                 <tr>
-                    <th class="col-name" style="white-space:nowrap;">کد پرسنلی</th>
-                    <th class="col-name" style="white-space:nowrap;">نام همکار</th>
-                    <th class="col-name" style="white-space:nowrap;">محل خدمت</th>
+                    <th class="col-name" rowspan="2" style="vertical-align:middle;">کد پرسنلی</th>
+                    <th class="col-name" rowspan="2" style="vertical-align:middle;">نام همکار</th>
+                    <th class="col-name" rowspan="2" style="vertical-align:middle;">محل خدمت</th>
                     @foreach($result['service_types'] as $type)
-                        <th style="white-space:nowrap;">{{ $type }}</th>
+                        <th colspan="4" style="border-bottom:1px solid #2d5a8e;">{{ $type }}</th>
                     @endforeach
-                    <th style="white-space:nowrap;">جمع</th>
+                    <th colspan="4" style="border-bottom:1px solid #2d5a8e;">جمع</th>
+                </tr>
+                <tr>
+                    @foreach($result['service_types'] as $type)
+                        <th style="font-size:7px;color:#bfdbfe;">کل</th>
+                        <th style="font-size:7px;color:#86efac;">تایید</th>
+                        <th style="font-size:7px;color:#fde68a;">انتظار</th>
+                        <th style="font-size:7px;color:#fca5a5;">رد</th>
+                    @endforeach
+                    <th style="font-size:7px;color:#bfdbfe;">کل</th>
+                    <th style="font-size:7px;color:#86efac;">تایید</th>
+                    <th style="font-size:7px;color:#fde68a;">انتظار</th>
+                    <th style="font-size:7px;color:#fca5a5;">رد</th>
                 </tr>
             </thead>
             <tbody>
@@ -168,17 +180,18 @@
                     <tr class="{{ $idx % 2 === 0 ? 'even' : 'odd' }}">
                         <td class="col-name">{{ $emp['personnel_code'] }}</td>
                         <td class="col-name" style="font-weight:500;">{{ $emp['full_name'] }}</td>
-                        <td class="col-name" style="color:#6b7280;font-size:8px;">{{ $emp['workplace'] }}</td>
+                        <td class="col-name" style="color:#6b7280;font-size:7px;">{{ $emp['workplace'] }}</td>
                         @foreach($result['service_types'] as $type)
                             @php $cell = $emp['services'][$type]; @endphp
-                            <td>
-                                <div class="num-all">{{ $cell['all'] }}</div>
-                                <div class="cell-breakdown">
-                                    <span class="approved">{{ $cell[2] }}</span>/<span class="pending">{{ $cell[1] }}</span>/<span class="rejected">{{ $cell[3] }}</span>
-                                </div>
-                            </td>
+                            <td class="num-all">{{ $cell['all'] }}</td>
+                            <td class="approved">{{ $cell[2] }}</td>
+                            <td class="pending">{{ $cell[1] }}</td>
+                            <td class="rejected">{{ $cell[3] }}</td>
                         @endforeach
                         <td class="num-all" style="color:#1e3a5f;">{{ $emp['total']['all'] }}</td>
+                        <td class="approved">{{ $emp['total'][2] }}</td>
+                        <td class="pending">{{ $emp['total'][1] }}</td>
+                        <td class="rejected">{{ $emp['total'][3] }}</td>
                     </tr>
                 @endforeach
             </tbody>

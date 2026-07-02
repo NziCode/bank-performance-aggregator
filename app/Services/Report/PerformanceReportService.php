@@ -395,8 +395,8 @@ class PerformanceReportService
     public static function breakdownOptionsForLevel(string $level): array
     {
         return match ($level) {
-            self::LEVEL_PROVINCE      => ['zone' => 'حوزه', 'branch' => 'شعبه', 'employee' => 'کارمند'],
-            self::LEVEL_ZONE          => ['branch' => 'شعبه', 'employee' => 'کارمند'],
+            self::LEVEL_PROVINCE      => ['zone' => 'حوزه', 'branch' => 'شعبه', 'branch_office' => 'باجه', 'employee' => 'کارمند'],
+            self::LEVEL_ZONE          => ['branch' => 'شعبه', 'branch_office' => 'باجه', 'employee' => 'کارمند'],
             self::LEVEL_BRANCH        => ['branch_office' => 'باجه', 'employee' => 'کارمند'],
             self::LEVEL_BRANCH_OFFICE => ['employee' => 'کارمند'],
             self::LEVEL_STAFF         => ['employee' => 'کارمند'],

@@ -81,7 +81,7 @@
 <body>
 
     <div class="header-box">
-        <div class="header-title">کارنامه عملکرد — {{ $levelLabel }}: {{ $entityLabel }} — ریزبندی بر اساس {{ $result['breakdown_label'] }}</div>
+        <div class="header-title">کارنامه عملکرد — {{ $levelLabel }}: {{ $entityLabel }} — ریزبندی: {{ collect($results)->pluck('breakdown_label')->join('، ') }}</div>
         <div class="header-meta">
             <span>بازه گزارش: {{ $fromJalali }} تا {{ $toJalali }}</span>
             <span>تاریخ اخذ گزارش: {{ $reportDate }}</span>
@@ -90,20 +90,36 @@
     </div>
 
     <div class="summary-bar">
-        <span style="color:#374151;">مجموع کل: <strong>{{ $result['grand_total']['all'] }}</strong></span>
-        <span class="approved">✓ تایید: <strong>{{ $result['grand_total'][2] }}</strong></span>
-        <span class="pending">⏳ انتظار: <strong>{{ $result['grand_total'][1] }}</strong></span>
-        <span class="rejected">✗ رد: <strong>{{ $result['grand_total'][3] }}</strong></span>
+        <span style="color:#374151;">مجموع کل: <strong>{{ $results[0]['grand_total']['all'] }}</strong></span>
+        <span class="approved">✓ تایید: <strong>{{ $results[0]['grand_total'][2] }}</strong></span>
+        <span class="pending">⏳ انتظار: <strong>{{ $results[0]['grand_total'][1] }}</strong></span>
+        <span class="rejected">✗ رد: <strong>{{ $results[0]['grand_total'][3] }}</strong></span>
     </div>
 
-    <table>
+    @foreach($results as $result)
+    <div class="section-title" style="font-size:10px;font-weight:bold;color:#1e3a5f;padding:5px 8px;background:#dbeafe;margin:10px 0 4px;border-right:3px solid #1e3a5f;">
+        آمار به تفکیک {{ $result['breakdown_label'] }}
+    </div>
+    <table style="margin-bottom:16px;">
         <thead>
             <tr>
-                <th class="col-label" style="white-space:nowrap;">{{ $result['breakdown_label'] }}</th>
+                <th class="col-label" rowspan="2" style="vertical-align:middle;">{{ $result['breakdown_label'] }}</th>
                 @foreach($result['service_types'] as $type)
-                    <th style="white-space:nowrap;">{{ $type }}</th>
+                    <th colspan="4" style="border-bottom:1px solid #2d5a8e;">{{ $type }}</th>
                 @endforeach
-                <th style="white-space:nowrap;">جمع کل</th>
+                <th colspan="4" style="border-bottom:1px solid #2d5a8e;">جمع کل</th>
+            </tr>
+            <tr>
+                @foreach($result['service_types'] as $type)
+                    <th style="font-size:7px;color:#bfdbfe;">کل</th>
+                    <th style="font-size:7px;color:#86efac;">تایید</th>
+                    <th style="font-size:7px;color:#fde68a;">انتظار</th>
+                    <th style="font-size:7px;color:#fca5a5;">رد</th>
+                @endforeach
+                <th style="font-size:7px;color:#bfdbfe;">کل</th>
+                <th style="font-size:7px;color:#86efac;">تایید</th>
+                <th style="font-size:7px;color:#fde68a;">انتظار</th>
+                <th style="font-size:7px;color:#fca5a5;">رد</th>
             </tr>
         </thead>
         <tbody>
@@ -112,19 +128,15 @@
                     <td class="col-label">{{ $row['label'] }}</td>
                     @foreach($result['service_types'] as $type)
                         @php $cell = $row['services'][$type]; @endphp
-                        <td>
-                            <div class="num-all">{{ $cell['all'] }}</div>
-                            <div class="sub">
-                                <span class="approved">{{ $cell[2] }}</span>/<span class="pending">{{ $cell[1] }}</span>/<span class="rejected">{{ $cell[3] }}</span>
-                            </div>
-                        </td>
+                        <td class="num-all">{{ $cell['all'] }}</td>
+                        <td class="approved">{{ $cell[2] }}</td>
+                        <td class="pending">{{ $cell[1] }}</td>
+                        <td class="rejected">{{ $cell[3] }}</td>
                     @endforeach
-                    <td>
-                        <div class="num-all">{{ $row['grand_total']['all'] }}</div>
-                        <div class="sub">
-                            <span class="approved">{{ $row['grand_total'][2] }}</span>/<span class="pending">{{ $row['grand_total'][1] }}</span>/<span class="rejected">{{ $row['grand_total'][3] }}</span>
-                        </div>
-                    </td>
+                    <td class="num-all" style="color:#1e3a5f;">{{ $row['grand_total']['all'] }}</td>
+                    <td class="approved">{{ $row['grand_total'][2] }}</td>
+                    <td class="pending">{{ $row['grand_total'][1] }}</td>
+                    <td class="rejected">{{ $row['grand_total'][3] }}</td>
                 </tr>
             @endforeach
             <tr class="total-row">
@@ -136,17 +148,19 @@
                         $pen = array_sum(array_map(fn($r) => $r['services'][$type][1], $result['rows']));
                         $rej = array_sum(array_map(fn($r) => $r['services'][$type][3], $result['rows']));
                     @endphp
-                    <td>
-                        <div class="num-all">{{ $all }}</div>
-                        <div class="sub">
-                            <span class="approved">{{ $app }}</span>/<span class="pending">{{ $pen }}</span>/<span class="rejected">{{ $rej }}</span>
-                        </div>
-                    </td>
+                    <td class="num-all">{{ $all }}</td>
+                    <td class="approved">{{ $app }}</td>
+                    <td class="pending">{{ $pen }}</td>
+                    <td class="rejected">{{ $rej }}</td>
                 @endforeach
                 <td class="num-all" style="color:#1e3a5f;">{{ $result['grand_total']['all'] }}</td>
+                <td class="approved">{{ $result['grand_total'][2] }}</td>
+                <td class="pending">{{ $result['grand_total'][1] }}</td>
+                <td class="rejected">{{ $result['grand_total'][3] }}</td>
             </tr>
         </tbody>
     </table>
+    @endforeach
 
     <div class="footer">
         این گزارش توسط سامانه ارزیابی عملکرد تهیه شده است — {{ $preparedBy }} — تاریخ: {{ $reportDate }}

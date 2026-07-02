@@ -11,7 +11,6 @@ use App\Models\Zone;
 use App\Services\Report\PerformanceReportService;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Toggle;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Carbon;
@@ -95,6 +94,7 @@ class PerformanceCard extends Page
                 Select::make('breakdown_by')
                     ->label('ریزبندی بر اساس')
                     ->placeholder('بدون ریزبندی')
+                    ->multiple()
                     ->options(fn($get) => PerformanceReportService::breakdownOptionsForLevel($get('level') ?? ''))
                     ->live()
                     ->visible(fn($get) => filled($get('level')) && $get('level') !== 'employee'),
@@ -142,11 +142,6 @@ class PerformanceCard extends Page
                     ->default('summary')
                     ->required(),
 
-                Toggle::make('include_sub_offices')
-                    ->label('شامل باجه‌های زیرمجموعه')
-                    ->helperText('فقط در سطح شعبه و بدون ریزبندی')
-                    ->visible(fn($get) => $get('level') === 'branch' && !filled($get('breakdown_by')))
-                    ->default(false),
 
             ])
             ->statePath('data');
@@ -174,8 +169,12 @@ class PerformanceCard extends Page
         $this->toLabel     = Jalalian::fromDateTime(new \DateTime($to))->format('Y/m/d');
 
         // ─── ریزبندی (breakdown) ───────────────────────────────────────────────
-        if ($breakdownBy && $data['report_type'] === 'summary') {
-            $this->breakdownResult = $service->breakdownSummary($data['level'], $entityId, $from, $to, $breakdownBy, $serviceTypeIds);
+        if (!empty($breakdownBy) && $data['report_type'] === 'summary') {
+            $breakdowns = [];
+            foreach ((array) $breakdownBy as $bd) {
+                $breakdowns[] = $service->breakdownSummary($data['level'], $entityId, $from, $to, $bd, $serviceTypeIds);
+            }
+            $this->breakdownResult = $breakdowns;
             $this->summaryResult   = null;
             $this->detailedResult  = null;
             return;
