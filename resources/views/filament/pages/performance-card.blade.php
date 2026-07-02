@@ -62,11 +62,23 @@
                 <table style="width:100%;border-collapse:collapse;font-size:12px;">
                     <thead>
                         <tr style="background:#1e3a5f;color:#fff;">
-                            <th style="padding:10px 14px;text-align:right;white-space:nowrap;">{{ $breakdownResult['breakdown_label'] }}</th>
+                            <th rowspan="2" style="padding:10px 14px;text-align:right;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">{{ $breakdownResult['breakdown_label'] }}</th>
                             @foreach($breakdownResult['service_types'] as $type)
-                                <th style="padding:10px 12px;text-align:center;white-space:nowrap;">{{ $type }}</th>
+                                <th colspan="4" style="padding:6px 12px;text-align:center;white-space:nowrap;border-left:1px solid #2d5a8e;border-bottom:1px solid #2d5a8e;">{{ $type }}</th>
                             @endforeach
-                            <th style="padding:10px 12px;text-align:center;white-space:nowrap;">جمع کل</th>
+                            <th colspan="4" style="padding:6px 12px;text-align:center;white-space:nowrap;border-left:1px solid #2d5a8e;border-bottom:1px solid #2d5a8e;">جمع کل</th>
+                        </tr>
+                        <tr style="background:#1e3a5f;color:#fff;">
+                            @foreach($breakdownResult['service_types'] as $type)
+                                <th style="padding:5px 8px;text-align:center;font-size:10px;color:#bfdbfe;border-left:1px solid #2d5a8e;">کل</th>
+                                <th style="padding:5px 8px;text-align:center;font-size:10px;color:#86efac;">تایید</th>
+                                <th style="padding:5px 8px;text-align:center;font-size:10px;color:#fde68a;">انتظار</th>
+                                <th style="padding:5px 8px;text-align:center;font-size:10px;color:#fca5a5;border-left:1px solid #2d5a8e;">رد</th>
+                            @endforeach
+                            <th style="padding:5px 8px;text-align:center;font-size:10px;color:#bfdbfe;border-left:1px solid #2d5a8e;">کل</th>
+                            <th style="padding:5px 8px;text-align:center;font-size:10px;color:#86efac;">تایید</th>
+                            <th style="padding:5px 8px;text-align:center;font-size:10px;color:#fde68a;">انتظار</th>
+                            <th style="padding:5px 8px;text-align:center;font-size:10px;color:#fca5a5;">رد</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -75,19 +87,15 @@
                                 <td style="padding:9px 14px;font-weight:500;">{{ $row['label'] }}</td>
                                 @foreach($breakdownResult['service_types'] as $type)
                                     @php $cell = $row['services'][$type]; @endphp
-                                    <td style="padding:9px 12px;text-align:center;">
-                                        <div style="font-weight:bold;">{{ $cell['all'] }}</div>
-                                        <div style="font-size:10px;color:#9ca3af;">
-                                            <span style="color:#16a34a;">{{ $cell[2] }}</span>/<span style="color:#ca8a04;">{{ $cell[1] }}</span>/<span style="color:#dc2626;">{{ $cell[3] }}</span>
-                                        </div>
-                                    </td>
+                                    <td style="padding:9px 8px;text-align:center;font-weight:bold;">{{ $cell['all'] }}</td>
+                                    <td style="padding:9px 8px;text-align:center;color:#16a34a;">{{ $cell[2] }}</td>
+                                    <td style="padding:9px 8px;text-align:center;color:#ca8a04;">{{ $cell[1] }}</td>
+                                    <td style="padding:9px 8px;text-align:center;color:#dc2626;border-left:1px solid #f3f4f6;">{{ $cell[3] }}</td>
                                 @endforeach
-                                <td style="padding:9px 12px;text-align:center;font-weight:bold;color:#1e3a5f;">
-                                    <div>{{ $row['grand_total']['all'] }}</div>
-                                    <div style="font-size:10px;font-weight:normal;color:#9ca3af;">
-                                        <span style="color:#16a34a;">{{ $row['grand_total'][2] }}</span>/<span style="color:#ca8a04;">{{ $row['grand_total'][1] }}</span>/<span style="color:#dc2626;">{{ $row['grand_total'][3] }}</span>
-                                    </div>
-                                </td>
+                                <td style="padding:9px 8px;text-align:center;font-weight:bold;color:#1e3a5f;">{{ $row['grand_total']['all'] }}</td>
+                                <td style="padding:9px 8px;text-align:center;color:#16a34a;">{{ $row['grand_total'][2] }}</td>
+                                <td style="padding:9px 8px;text-align:center;color:#ca8a04;">{{ $row['grand_total'][1] }}</td>
+                                <td style="padding:9px 8px;text-align:center;color:#dc2626;">{{ $row['grand_total'][3] }}</td>
                             </tr>
                         @endforeach
                         {{-- ردیف جمع کل --}}
@@ -98,20 +106,18 @@
                                     $total = ['all' => 0, 2 => 0, 1 => 0, 3 => 0];
                                     foreach ($breakdownResult['rows'] as $r) {
                                         $c = $r['services'][$type];
-                                        $total['all'] += $c['all'];
-                                        $total[2] += $c[2];
-                                        $total[1] += $c[1];
-                                        $total[3] += $c[3];
+                                        $total['all'] += $c['all']; $total[2] += $c[2]; $total[1] += $c[1]; $total[3] += $c[3];
                                     }
                                 @endphp
-                                <td style="padding:10px 12px;text-align:center;">
-                                    <div>{{ $total['all'] }}</div>
-                                    <div style="font-size:10px;font-weight:normal;color:#9ca3af;">
-                                        <span style="color:#16a34a;">{{ $total[2] }}</span>/<span style="color:#ca8a04;">{{ $total[1] }}</span>/<span style="color:#dc2626;">{{ $total[3] }}</span>
-                                    </div>
-                                </td>
+                                <td style="padding:10px 8px;text-align:center;">{{ $total['all'] }}</td>
+                                <td style="padding:10px 8px;text-align:center;color:#16a34a;">{{ $total[2] }}</td>
+                                <td style="padding:10px 8px;text-align:center;color:#ca8a04;">{{ $total[1] }}</td>
+                                <td style="padding:10px 8px;text-align:center;color:#dc2626;border-left:1px solid #bfdbfe;">{{ $total[3] }}</td>
                             @endforeach
-                            <td style="padding:10px 12px;text-align:center;color:#1e3a5f;">{{ $breakdownResult['grand_total']['all'] }}</td>
+                            <td style="padding:10px 8px;text-align:center;color:#1e3a5f;">{{ $breakdownResult['grand_total']['all'] }}</td>
+                            <td style="padding:10px 8px;text-align:center;color:#16a34a;">{{ $breakdownResult['grand_total'][2] }}</td>
+                            <td style="padding:10px 8px;text-align:center;color:#ca8a04;">{{ $breakdownResult['grand_total'][1] }}</td>
+                            <td style="padding:10px 8px;text-align:center;color:#dc2626;">{{ $breakdownResult['grand_total'][3] }}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -171,13 +177,25 @@
                     <table style="width:100%;border-collapse:collapse;font-size:12px;">
                         <thead>
                             <tr style="background:#1e3a5f;color:#fff;">
-                                <th style="padding:10px 12px;text-align:right;white-space:nowrap;">کد پرسنلی</th>
-                                <th style="padding:10px 12px;text-align:right;white-space:nowrap;">نام همکار</th>
-                                <th style="padding:10px 12px;text-align:right;white-space:nowrap;">محل خدمت</th>
+                                <th rowspan="2" style="padding:10px 12px;text-align:right;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">کد پرسنلی</th>
+                                <th rowspan="2" style="padding:10px 12px;text-align:right;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">نام همکار</th>
+                                <th rowspan="2" style="padding:10px 12px;text-align:right;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">محل خدمت</th>
                                 @foreach($summaryResult['service_types'] as $type)
-                                    <th style="padding:10px 12px;text-align:center;white-space:nowrap;">{{ $type }}</th>
+                                    <th colspan="4" style="padding:6px 12px;text-align:center;white-space:nowrap;border-left:1px solid #2d5a8e;border-bottom:1px solid #2d5a8e;">{{ $type }}</th>
                                 @endforeach
-                                <th style="padding:10px 12px;text-align:center;white-space:nowrap;">جمع</th>
+                                <th colspan="4" style="padding:6px 12px;text-align:center;white-space:nowrap;border-left:1px solid #2d5a8e;border-bottom:1px solid #2d5a8e;">جمع</th>
+                            </tr>
+                            <tr style="background:#1e3a5f;color:#fff;">
+                                @foreach($summaryResult['service_types'] as $type)
+                                    <th style="padding:5px 8px;text-align:center;font-size:10px;color:#bfdbfe;border-left:1px solid #2d5a8e;">کل</th>
+                                    <th style="padding:5px 8px;text-align:center;font-size:10px;color:#86efac;">تایید</th>
+                                    <th style="padding:5px 8px;text-align:center;font-size:10px;color:#fde68a;">انتظار</th>
+                                    <th style="padding:5px 8px;text-align:center;font-size:10px;color:#fca5a5;border-left:1px solid #2d5a8e;">رد</th>
+                                @endforeach
+                                <th style="padding:5px 8px;text-align:center;font-size:10px;color:#bfdbfe;border-left:1px solid #2d5a8e;">کل</th>
+                                <th style="padding:5px 8px;text-align:center;font-size:10px;color:#86efac;">تایید</th>
+                                <th style="padding:5px 8px;text-align:center;font-size:10px;color:#fde68a;">انتظار</th>
+                                <th style="padding:5px 8px;text-align:center;font-size:10px;color:#fca5a5;">رد</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -188,16 +206,15 @@
                                     <td style="padding:9px 12px;color:#6b7280;font-size:11px;">{{ $row['workplace'] }}</td>
                                     @foreach($summaryResult['service_types'] as $type)
                                         @php $cell = $row['services'][$type]; @endphp
-                                        <td style="padding:9px 12px;text-align:center;">
-                                            <div style="font-weight:bold;">{{ $cell['all'] }}</div>
-                                            <div style="font-size:10px;color:#9ca3af;">
-                                                <span style="color:#16a34a;">{{ $cell[2] }}</span>/<span style="color:#ca8a04;">{{ $cell[1] }}</span>/<span style="color:#dc2626;">{{ $cell[3] }}</span>
-                                            </div>
-                                        </td>
+                                        <td style="padding:9px 8px;text-align:center;font-weight:bold;">{{ $cell['all'] }}</td>
+                                        <td style="padding:9px 8px;text-align:center;color:#16a34a;">{{ $cell[2] }}</td>
+                                        <td style="padding:9px 8px;text-align:center;color:#ca8a04;">{{ $cell[1] }}</td>
+                                        <td style="padding:9px 8px;text-align:center;color:#dc2626;border-left:1px solid #f3f4f6;">{{ $cell[3] }}</td>
                                     @endforeach
-                                    <td style="padding:9px 12px;text-align:center;font-weight:bold;color:#1e3a5f;">
-                                        {{ $row['total']['all'] }}
-                                    </td>
+                                    <td style="padding:9px 8px;text-align:center;font-weight:bold;color:#1e3a5f;">{{ $row['total']['all'] }}</td>
+                                    <td style="padding:9px 8px;text-align:center;color:#16a34a;">{{ $row['total'][2] }}</td>
+                                    <td style="padding:9px 8px;text-align:center;color:#ca8a04;">{{ $row['total'][1] }}</td>
+                                    <td style="padding:9px 8px;text-align:center;color:#dc2626;">{{ $row['total'][3] }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
