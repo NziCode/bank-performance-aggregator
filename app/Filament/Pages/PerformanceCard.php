@@ -29,9 +29,10 @@ class PerformanceCard extends Page
         'report_type' => 'summary',
     ];
 
-    public ?array  $detailedResult  = null;
-    public ?array  $summaryResult   = null;
-    public ?array  $breakdownResult = null;
+    public ?array  $detailedResult      = null;
+    public ?array  $summaryResult       = null;
+    public ?array  $breakdownResult     = null;
+    public ?array  $noPerformanceResult = null;
     public ?string $entityLabel     = null;
     public ?string $periodLabel     = null;
     public ?string $fromLabel       = null;
@@ -136,10 +137,12 @@ class PerformanceCard extends Page
                 Select::make('report_type')
                     ->label('نوع گزارش')
                     ->options([
-                        'summary'  => 'کلی (خلاصه)',
-                        'detailed' => 'جزئی (ریز رکوردها)',
+                        'summary'        => 'کلی (خلاصه)',
+                        'detailed'       => 'جزئی (ریز رکوردها)',
+                        'no_performance' => 'فاقد عملکرد',
                     ])
                     ->default('summary')
+                    ->live()
                     ->required(),
 
 
@@ -152,21 +155,31 @@ class PerformanceCard extends Page
         $data    = $this->form->getState();
         $service = app(PerformanceReportService::class);
 
+        $this->summaryResult       = null;
+        $this->detailedResult      = null;
+        $this->breakdownResult     = null;
+        $this->noPerformanceResult = null;
+
         [$from, $to] = PerformanceReportService::resolveDateRange(
             $data['period'],
             isset($data['from']) ? Carbon::parse($data['from'])->toDateString() : null,
             isset($data['to'])   ? Carbon::parse($data['to'])->toDateString()   : null,
         );
 
-        $entityId        = $data['entity_id'] ?? 'all';
-        $breakdownBy     = $data['breakdown_by'] ?? null;
-        $serviceTypeIds  = $data['service_type_ids'] ?? [];
-        $includeSubOffices = $data['include_sub_offices'] ?? false;
+        $entityId       = $data['entity_id'] ?? 'all';
+        $breakdownBy    = $data['breakdown_by'] ?? [];
+        $serviceTypeIds = $data['service_type_ids'] ?? [];
 
         $this->entityLabel = $this->resolveEntityLabel($data['level'], $entityId);
         $this->periodLabel = PerformanceReportService::periodLabels()[$data['period']] ?? '';
         $this->fromLabel   = Jalalian::fromDateTime(new \DateTime($from))->format('Y/m/d');
         $this->toLabel     = Jalalian::fromDateTime(new \DateTime($to))->format('Y/m/d');
+
+        // ─── فاقد عملکرد ──────────────────────────────────────────────────────
+        if ($data['report_type'] === 'no_performance') {
+            $this->noPerformanceResult = $service->noPerformance($data['level'], $entityId, $from, $to, $serviceTypeIds);
+            return;
+        }
 
         // ─── ریزبندی (breakdown) ───────────────────────────────────────────────
         if (!empty($breakdownBy) && $data['report_type'] === 'summary') {
@@ -175,25 +188,17 @@ class PerformanceCard extends Page
                 $breakdowns[] = $service->breakdownSummary($data['level'], $entityId, $from, $to, $bd, $serviceTypeIds);
             }
             $this->breakdownResult = $breakdowns;
-            $this->summaryResult   = null;
-            $this->detailedResult  = null;
             return;
         }
 
         // ─── گزارش جزئی ───────────────────────────────────────────────────────
         if ($data['report_type'] === 'detailed') {
-            $this->detailedResult  = $service->detailed($data['level'], $entityId, $from, $to, $includeSubOffices, $serviceTypeIds)->toArray();
-            $this->summaryResult   = null;
-            $this->breakdownResult = null;
+            $this->detailedResult = $service->detailed($data['level'], $entityId, $from, $to, false, $serviceTypeIds)->toArray();
             return;
         }
 
         // ─── گزارش کلی ────────────────────────────────────────────────────────
-        $result = $service->summary($data['level'], $entityId, $from, $to, $includeSubOffices, $serviceTypeIds);
-
-        $this->summaryResult   = $result;
-        $this->detailedResult  = null;
-        $this->breakdownResult = null;
+        $this->summaryResult = $service->summary($data['level'], $entityId, $from, $to, false, $serviceTypeIds);
     }
 
     public function exportExcel(): mixed
@@ -222,10 +227,9 @@ class PerformanceCard extends Page
             'from'                => $from,
             'to'                  => $to,
             'report_type'         => $data['report_type'],
-            'breakdown_by'        => $data['breakdown_by'] ?? null,
-            'service_type_ids'    => $data['service_type_ids'] ?? [],
-            'include_sub_offices' => $data['include_sub_offices'] ?? false,
-            'format'              => $format,
+            'breakdown_by'     => $data['breakdown_by'] ?? null,
+            'service_type_ids' => $data['service_type_ids'] ?? [],
+            'format'           => $format,
         ]);
     }
 

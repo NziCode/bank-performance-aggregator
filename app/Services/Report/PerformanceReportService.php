@@ -9,6 +9,7 @@ use App\Models\ServiceType;
 use App\Models\StaffUnit;
 use App\Models\User;
 use App\Models\Zone;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Morilog\Jalali\Jalalian;
@@ -353,6 +354,92 @@ class PerformanceReportService
         return $serviceTypeIds
             ? ServiceType::whereIn('id', $serviceTypeIds)->pluck('name')
             : ServiceType::orderBy('id')->pluck('name');
+    }
+
+    // ─── No Performance ───────────────────────────────────────────────────────
+
+    public function noPerformance(
+        string $level,
+        string|int $entityId,
+        string $from,
+        string $to,
+        array $serviceTypeIds = []
+    ): array {
+        $performingCodes = $this->hierarchicalQuery($level, $entityId, $from, $to, $serviceTypeIds)
+            ->distinct()
+            ->pluck('personnel_code')
+            ->toArray();
+
+        $userQuery = User::with(['branch', 'branchOffice', 'zone', 'staffUnit'])
+            ->whereNotIn('personnel_code', $performingCodes);
+        $this->scopeUsersToLevel($userQuery, $level, $entityId);
+
+        $users = $userQuery->orderBy('personnel_code')->get();
+
+        return [
+            'count'     => $users->count(),
+            'employees' => $users->map(fn($u) => [
+                'personnel_code' => $u->personnel_code,
+                'full_name'      => $u->full_name,
+                'workplace'      => $this->resolveUserWorkplace($u),
+            ])->values()->toArray(),
+        ];
+    }
+
+    private function scopeUsersToLevel(Builder $query, string $level, $entityId): void
+    {
+        switch ($level) {
+            case self::LEVEL_PROVINCE:
+                break;
+
+            case self::LEVEL_ZONE:
+                $branchCodes = Branch::where('zone_code', $entityId)->pluck('code');
+                $officeIds   = BranchOffice::whereIn('branch_code', $branchCodes)->pluck('id');
+                $query->where(function ($q) use ($entityId, $branchCodes, $officeIds) {
+                    $q->where(function ($qq) use ($entityId) {
+                        $qq->where('workplace_type', 'zone')->where('zone_code', $entityId);
+                    })->orWhere(function ($qq) use ($branchCodes) {
+                        $qq->where('workplace_type', 'branch')->whereIn('branch_code', $branchCodes);
+                    })->orWhere(function ($qq) use ($officeIds) {
+                        $qq->where('workplace_type', 'branch_office')->whereIn('branch_office_id', $officeIds);
+                    });
+                });
+                break;
+
+            case self::LEVEL_BRANCH:
+                $officeIds = BranchOffice::where('branch_code', $entityId)->pluck('id');
+                $query->where(function ($q) use ($entityId, $officeIds) {
+                    $q->where(function ($qq) use ($entityId) {
+                        $qq->where('workplace_type', 'branch')->where('branch_code', $entityId);
+                    })->orWhere(function ($qq) use ($officeIds) {
+                        $qq->where('workplace_type', 'branch_office')->whereIn('branch_office_id', $officeIds);
+                    });
+                });
+                break;
+
+            case self::LEVEL_BRANCH_OFFICE:
+                $query->where('workplace_type', 'branch_office')->where('branch_office_id', $entityId);
+                break;
+
+            case self::LEVEL_STAFF:
+                $query->where('workplace_type', 'staff')->where('staff_unit_code', $entityId);
+                break;
+
+            case self::LEVEL_EMPLOYEE:
+                $query->where('personnel_code', $entityId);
+                break;
+        }
+    }
+
+    private function resolveUserWorkplace(User $user): string
+    {
+        return match ($user->workplace_type) {
+            'branch'        => 'شعبه ' . ($user->branch?->name ?? '—') . ' - ' . $user->branch_code,
+            'branch_office' => 'باجه ' . ($user->branchOffice?->name ?? '—'),
+            'zone'          => 'حوزه ' . ($user->zone?->name ?? '—'),
+            'staff'         => $user->staffUnit?->name ?? '—',
+            default         => '—',
+        };
     }
 
     // ─── Labels ────────────────────────────────────────────────────────────────

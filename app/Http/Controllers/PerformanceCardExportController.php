@@ -29,7 +29,7 @@ class PerformanceCardExportController extends Controller
             'entity_id'   => ['required_unless:level,province'],
             'from'        => ['required', 'date'],
             'to'          => ['required', 'date'],
-            'report_type' => ['required', 'in:summary,detailed'],
+            'report_type' => ['required', 'in:summary,detailed,no_performance'],
             'format'      => ['required', 'in:excel,pdf'],
         ]);
 
@@ -64,6 +64,14 @@ class PerformanceCardExportController extends Controller
             return $format === 'pdf'
                 ? $this->summaryPdf($result, $entityLabel, $levelLabel, $entityId, $from, $to)
                 : $this->summaryExcel($result, $entityLabel, $levelLabel, $entityId, $from, $to);
+        }
+
+        // ─── no performance ────────────────────────────────────────────────────
+        if ($reportType === 'no_performance') {
+            $result = $service->noPerformance($level, $entityId, $from, $to, $serviceTypeIds);
+            return $format === 'pdf'
+                ? $this->noPerformancePdf($result, $entityLabel, $levelLabel, $entityId, $from, $to)
+                : $this->noPerformanceExcel($result, $entityLabel, $levelLabel, $entityId, $from, $to);
         }
 
         // ─── detailed ──────────────────────────────────────────────────────────
@@ -448,6 +456,74 @@ class PerformanceCardExportController extends Controller
         }
 
         return $this->streamExcel($spreadsheet, 'performance-card-detailed.xlsx');
+    }
+
+    private function noPerformancePdf(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
+    {
+        $html = view('exports.performance-card-no-performance-pdf', [
+            'result'      => $result,
+            'entityLabel' => $entityLabel,
+            'levelLabel'  => $levelLabel,
+            'entityId'    => $entityId,
+            'fromJalali'  => $this->jalali($from),
+            'toJalali'    => $this->jalali($to),
+            'reportDate'  => $this->jalali(now()->toDateString()),
+            'preparedBy'  => $this->preparedBy,
+        ])->render();
+
+        return PdfService::download(
+            PdfService::make($html, 'P'),
+            'performance-card-no-performance.pdf'
+        );
+    }
+
+    private function noPerformanceExcel(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet       = $spreadsheet->getActiveSheet();
+        $sheet->setRightToLeft(true);
+        $sheet->setTitle('فاقد عملکرد');
+
+        $sheet->getCell('A1')->setValue('فاقد عملکرد — ' . $levelLabel . ': ' . $entityLabel . ' (کد: ' . $entityId . ')');
+        $sheet->mergeCells('A1:D1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+
+        $sheet->getCell('A2')->setValue('بازه گزارش: ' . $this->jalali($from) . ' تا ' . $this->jalali($to));
+        $sheet->mergeCells('A2:D2');
+
+        $sheet->getCell('A3')->setValue('تعداد فاقد عملکرد: ' . $result['count'] . ' نفر     تاریخ اخذ: ' . $this->jalali(now()->toDateString()));
+        $sheet->mergeCells('A3:D3');
+        $sheet->getStyle('A3')->getFont()->setItalic(true)->setSize(9)->getColor()->setRGB('6b7280');
+
+        $headerRow = 5;
+        $sheet->getCell('A' . $headerRow)->setValue('#');
+        $sheet->getCell('B' . $headerRow)->setValue('کد پرسنلی');
+        $sheet->getCell('C' . $headerRow)->setValue('نام همکار');
+        $sheet->getCell('D' . $headerRow)->setValue('محل خدمت فعلی');
+        $this->styleHeader($sheet, $headerRow, 4);
+        $sheet->getStyle('A' . $headerRow . ':D' . $headerRow)->applyFromArray([
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '7f1d1d']],
+        ]);
+        $sheet->getStyle('A' . $headerRow . ':D' . $headerRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
+        $row = $headerRow + 1;
+        foreach ($result['employees'] as $idx => $emp) {
+            $sheet->getCell('A' . $row)->setValue($idx + 1);
+            $sheet->getCell('B' . $row)->setValue($emp['personnel_code']);
+            $sheet->getCell('C' . $row)->setValue($emp['full_name']);
+            $sheet->getCell('D' . $row)->setValue($emp['workplace']);
+            if ($idx % 2 === 0) {
+                $sheet->getStyle('A' . $row . ':D' . $row)->getFill()
+                    ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('fff5f5');
+            }
+            $row++;
+        }
+
+        foreach (['A', 'B', 'C', 'D'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        return $this->streamExcel($spreadsheet, 'performance-card-no-performance.xlsx');
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────────
