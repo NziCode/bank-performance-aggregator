@@ -12,7 +12,6 @@ use App\Services\Report\PerformanceReportService;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Carbon;
@@ -176,15 +175,7 @@ class PerformanceCard extends Page
 
         // ─── ریزبندی (breakdown) ───────────────────────────────────────────────
         if ($breakdownBy && $data['report_type'] === 'summary') {
-            $result = $service->breakdownSummary($data['level'], $entityId, $from, $to, $breakdownBy, $serviceTypeIds);
-
-            if ($result['grand_total']['all'] === 0) {
-                Notification::make()->title('رکوردی یافت نشد')->warning()->send();
-                $this->clearResults();
-                return;
-            }
-
-            $this->breakdownResult = $result;
+            $this->breakdownResult = $service->breakdownSummary($data['level'], $entityId, $from, $to, $breakdownBy, $serviceTypeIds);
             $this->summaryResult   = null;
             $this->detailedResult  = null;
             return;
@@ -192,15 +183,7 @@ class PerformanceCard extends Page
 
         // ─── گزارش جزئی ───────────────────────────────────────────────────────
         if ($data['report_type'] === 'detailed') {
-            $records = $service->detailed($data['level'], $entityId, $from, $to, $includeSubOffices, $serviceTypeIds);
-
-            if ($records->isEmpty()) {
-                Notification::make()->title('رکوردی یافت نشد')->warning()->send();
-                $this->clearResults();
-                return;
-            }
-
-            $this->detailedResult  = $records->toArray();
+            $this->detailedResult  = $service->detailed($data['level'], $entityId, $from, $to, $includeSubOffices, $serviceTypeIds)->toArray();
             $this->summaryResult   = null;
             $this->breakdownResult = null;
             return;
@@ -208,12 +191,6 @@ class PerformanceCard extends Page
 
         // ─── گزارش کلی ────────────────────────────────────────────────────────
         $result = $service->summary($data['level'], $entityId, $from, $to, $includeSubOffices, $serviceTypeIds);
-
-        if ($result['grand_total']['all'] === 0) {
-            Notification::make()->title('رکوردی یافت نشد')->warning()->send();
-            $this->clearResults();
-            return;
-        }
 
         $this->summaryResult   = $result;
         $this->detailedResult  = null;

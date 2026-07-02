@@ -37,13 +37,10 @@ class PerformanceReportService
             'today'         => [$today->toDateString(), $today->toDateString()],
             'yesterday'     => [Carbon::yesterday()->toDateString(), Carbon::yesterday()->toDateString()],
             'current_month' => [
-                $now->startOfMonth()->toCarbon()->toDateString(),
-                $now->endOfMonth()->toCarbon()->toDateString(),
+                (new Jalalian($now->getYear(), $now->getMonth(), 1))->toCarbon()->toDateString(),
+                (new Jalalian($now->getYear(), $now->getMonth(), self::jalaliMonthDays($now->getMonth(), $now->getYear())))->toCarbon()->toDateString(),
             ],
-            'prev_month'    => [
-                $now->subMonths(1)->startOfMonth()->toCarbon()->toDateString(),
-                $now->subMonths(1)->endOfMonth()->toCarbon()->toDateString(),
-            ],
+            'prev_month'    => self::prevMonthRange($now),
             'current_year'  => [
                 (new Jalalian($now->getYear(), 1, 1))->toCarbon()->toDateString(),
                 $today->toDateString(),
@@ -55,6 +52,32 @@ class PerformanceReportService
             'custom'        => [$from, $to],
             default         => [$today->toDateString(), $today->toDateString()],
         };
+    }
+
+    private static function prevMonthRange(Jalalian $now): array
+    {
+        $month = $now->getMonth();
+        $year  = $now->getYear();
+
+        if ($month === 1) {
+            $prevYear  = $year - 1;
+            $prevMonth = 12;
+        } else {
+            $prevYear  = $year;
+            $prevMonth = $month - 1;
+        }
+
+        return [
+            (new Jalalian($prevYear, $prevMonth, 1))->toCarbon()->toDateString(),
+            (new Jalalian($prevYear, $prevMonth, self::jalaliMonthDays($prevMonth, $prevYear)))->toCarbon()->toDateString(),
+        ];
+    }
+
+    private static function jalaliMonthDays(int $month, int $year): int
+    {
+        if ($month <= 6) return 31;
+        if ($month <= 11) return 30;
+        return (new Jalalian($year, 1, 1))->isLeapYear() ? 30 : 29;
     }
 
     // ─── Detailed ──────────────────────────────────────────────────────────────
