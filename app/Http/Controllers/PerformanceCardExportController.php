@@ -68,7 +68,8 @@ class PerformanceCardExportController extends Controller
 
         // ─── no performance ────────────────────────────────────────────────────
         if ($reportType === 'no_performance') {
-            $checkBy = $request->input('no_performance_entity', 'employee');
+            $bk      = array_filter((array) $request->input('breakdown_by', []));
+            $checkBy = !empty($bk) ? reset($bk) : 'employee';
             $result  = $service->noPerformance($level, $entityId, $from, $to, $serviceTypeIds, $checkBy);
             return $format === 'pdf'
                 ? $this->noPerformancePdf($result, $entityLabel, $levelLabel, $entityId, $from, $to)
