@@ -92,29 +92,49 @@
         </div>
     </div>
 
+    @php
+        $checkBy   = $result['check_by'] ?? 'employee';
+        $entities  = $result['entities'] ?? [];
+        $countUnit = match($checkBy) { 'branch' => 'شعبه', 'branch_office' => 'باجه', 'zone' => 'حوزه', default => 'نفر' };
+        $col1      = match($checkBy) { 'branch' => 'کد شعبه', 'branch_office' => 'کد شعبه', 'zone' => 'کد حوزه', default => 'کد پرسنلی' };
+        $col2      = match($checkBy) { 'branch' => 'نام شعبه', 'branch_office' => 'نام باجه', 'zone' => 'نام حوزه', default => 'نام همکار' };
+        $col3      = match($checkBy) { 'branch' => 'حوزه', 'branch_office' => 'شعبه مادر', default => 'محل خدمت فعلی' };
+        $hasExtra  = $checkBy !== 'zone';
+        $emptyMsg  = match($checkBy) {
+            'branch'        => 'همه شعب در این بازه عملکرد ثبت کرده‌اند.',
+            'branch_office' => 'همه باجه‌ها در این بازه عملکرد ثبت کرده‌اند.',
+            'zone'          => 'همه حوزه‌ها در این بازه عملکرد ثبت کرده‌اند.',
+            default         => 'همه همکاران در این بازه عملکرد ثبت کرده‌اند.',
+        };
+    @endphp
+
     <div class="summary-bar">
-        تعداد همکاران فاقد عملکرد در این بازه: {{ $result['count'] }} نفر
+        تعداد فاقد عملکرد در این بازه: {{ $result['count'] }} {{ $countUnit }}
     </div>
 
     @if($result['count'] === 0)
-        <div class="empty-msg">✓ همه همکاران در این بازه عملکرد ثبت کرده‌اند.</div>
+        <div class="empty-msg">✓ {{ $emptyMsg }}</div>
     @else
         <table>
             <thead>
                 <tr>
                     <th class="center" style="width:30px;">#</th>
-                    <th style="width:80px;">کد پرسنلی</th>
-                    <th>نام همکار</th>
-                    <th>محل خدمت فعلی</th>
+                    <th style="width:80px;">{{ $col1 }}</th>
+                    <th>{{ $col2 }}</th>
+                    @if($hasExtra)
+                        <th>{{ $col3 }}</th>
+                    @endif
                 </tr>
             </thead>
             <tbody>
-                @foreach($result['employees'] as $idx => $emp)
+                @foreach($entities as $idx => $item)
                     <tr class="{{ $idx % 2 === 0 ? 'even' : 'odd' }}">
                         <td class="center">{{ $idx + 1 }}</td>
-                        <td>{{ $emp['personnel_code'] }}</td>
-                        <td style="font-weight:500;">{{ $emp['full_name'] }}</td>
-                        <td style="color:#6b7280;">{{ $emp['workplace'] }}</td>
+                        <td>{{ $item['code'] }}</td>
+                        <td style="font-weight:500;">{{ $item['name'] }}</td>
+                        @if($hasExtra)
+                            <td style="color:#6b7280;">{{ $item['extra'] }}</td>
+                        @endif
                     </tr>
                 @endforeach
             </tbody>

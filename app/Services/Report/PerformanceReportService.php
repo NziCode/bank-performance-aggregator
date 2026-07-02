@@ -356,6 +356,116 @@ class PerformanceReportService
             : ServiceType::orderBy('id')->pluck('name');
     }
 
+    // ─── No Performance Dashboard ─────────────────────────────────────────────
+
+    public function noPerformanceDashboard(string $from, string $to, array $serviceTypeIds = []): array
+    {
+        $perfQuery = Performance::query()->whereBetween('date', [$from, $to]);
+        if (!empty($serviceTypeIds)) {
+            $perfQuery->whereIn('service_type_id', $serviceTypeIds);
+        }
+        $performingCodes = $perfQuery->distinct()->pluck('personnel_code')->toArray();
+
+        $totalEmployees = User::count();
+
+        $noPerformers = User::with(['zone', 'branch.zone', 'branchOffice.branch', 'staffUnit'])
+            ->whereNotIn('personnel_code', $performingCodes)
+            ->orderBy('personnel_code')
+            ->get();
+
+        $noCount = $noPerformers->count();
+
+        // By zone
+        $zoneMap = [];
+        foreach ($noPerformers as $u) {
+            $zone = $this->getUserZone($u);
+            if ($zone) {
+                $key = $zone->code;
+                if (!isset($zoneMap[$key])) {
+                    $zoneMap[$key] = ['label' => $zone->name . ' - ' . $zone->code, 'count' => 0];
+                }
+                $zoneMap[$key]['count']++;
+            }
+        }
+        $byZone = array_values($zoneMap);
+        usort($byZone, fn($a, $b) => $b['count'] <=> $a['count']);
+
+        // By branch (top 15)
+        $branchMap = [];
+        foreach ($noPerformers as $u) {
+            $branch = $this->getUserBranch($u);
+            if ($branch) {
+                $key = $branch->code;
+                if (!isset($branchMap[$key])) {
+                    $branchMap[$key] = ['label' => $branch->name . ' - ' . $branch->code, 'count' => 0];
+                }
+                $branchMap[$key]['count']++;
+            }
+        }
+        $byBranch = array_values($branchMap);
+        usort($byBranch, fn($a, $b) => $b['count'] <=> $a['count']);
+        $byBranch = array_slice($byBranch, 0, 15);
+
+        // By workplace type
+        $typeLabels = [
+            'branch'        => 'شعبه',
+            'branch_office' => 'باجه',
+            'zone'          => 'حوزه',
+            'staff'         => 'ستادی',
+        ];
+        $typeMap = [];
+        foreach ($noPerformers as $u) {
+            $type = $u->workplace_type ?? 'other';
+            if (!isset($typeMap[$type])) {
+                $typeMap[$type] = ['label' => $typeLabels[$type] ?? $type, 'count' => 0];
+            }
+            $typeMap[$type]['count']++;
+        }
+
+        // By service type (always all types)
+        $serviceTypes = ServiceType::orderBy('id')->get();
+        $byServiceType = $serviceTypes->map(function ($st) use ($from, $to) {
+            $p = Performance::whereBetween('date', [$from, $to])
+                ->where('service_type_id', $st->id)
+                ->distinct()->pluck('personnel_code')->toArray();
+            return ['name' => $st->name, 'count' => User::whereNotIn('personnel_code', $p)->count()];
+        })->toArray();
+
+        return [
+            'total_employees'   => $totalEmployees,
+            'no_performance'    => $noCount,
+            'has_performance'   => $totalEmployees - $noCount,
+            'by_zone'           => $byZone,
+            'by_branch'         => $byBranch,
+            'by_workplace_type' => array_values($typeMap),
+            'by_service_type'   => $byServiceType,
+            'employees'         => $noPerformers->map(fn($u) => [
+                'personnel_code' => $u->personnel_code,
+                'full_name'      => $u->full_name,
+                'workplace'      => $this->resolveUserWorkplace($u),
+            ])->values()->toArray(),
+        ];
+    }
+
+    private function getUserZone(User $user): ?Zone
+    {
+        return match ($user->workplace_type) {
+            'zone'          => $user->zone,
+            'branch'        => $user->branch?->zone,
+            'branch_office' => $user->branchOffice?->branch?->zone,
+            default         => null,
+        };
+    }
+
+    private function getUserBranch(User $user): ?Branch
+    {
+        return match ($user->workplace_type) {
+            'branch'        => $user->branch,
+            'branch_office' => $user->branchOffice?->branch,
+            default         => null,
+        };
+    }
+
     // ─── No Performance ───────────────────────────────────────────────────────
 
     public function noPerformance(
@@ -363,12 +473,21 @@ class PerformanceReportService
         string|int $entityId,
         string $from,
         string $to,
-        array $serviceTypeIds = []
+        array $serviceTypeIds = [],
+        string $checkBy = 'employee'
     ): array {
+        return match ($checkBy) {
+            'branch'        => $this->noPerformanceBranches($level, $entityId, $from, $to, $serviceTypeIds),
+            'branch_office' => $this->noPerformanceBranchOffices($level, $entityId, $from, $to, $serviceTypeIds),
+            'zone'          => $this->noPerformanceZones($from, $to, $serviceTypeIds),
+            default         => $this->noPerformanceEmployees($level, $entityId, $from, $to, $serviceTypeIds),
+        };
+    }
+
+    private function noPerformanceEmployees(string $level, $entityId, string $from, string $to, array $serviceTypeIds): array
+    {
         $performingCodes = $this->hierarchicalQuery($level, $entityId, $from, $to, $serviceTypeIds)
-            ->distinct()
-            ->pluck('personnel_code')
-            ->toArray();
+            ->distinct()->pluck('personnel_code')->toArray();
 
         $userQuery = User::with(['branch', 'branchOffice', 'zone', 'staffUnit'])
             ->whereNotIn('personnel_code', $performingCodes);
@@ -377,11 +496,102 @@ class PerformanceReportService
         $users = $userQuery->orderBy('personnel_code')->get();
 
         return [
-            'count'     => $users->count(),
-            'employees' => $users->map(fn($u) => [
-                'personnel_code' => $u->personnel_code,
-                'full_name'      => $u->full_name,
-                'workplace'      => $this->resolveUserWorkplace($u),
+            'check_by' => 'employee',
+            'count'    => $users->count(),
+            'entities' => $users->map(fn($u) => [
+                'code'  => $u->personnel_code,
+                'name'  => $u->full_name,
+                'extra' => $this->resolveUserWorkplace($u),
+            ])->values()->toArray(),
+        ];
+    }
+
+    private function noPerformanceBranches(string $level, $entityId, string $from, string $to, array $serviceTypeIds): array
+    {
+        $directQ = Performance::whereBetween('date', [$from, $to])->where('workplace_type', 'branch');
+        if (!empty($serviceTypeIds)) $directQ->whereIn('service_type_id', $serviceTypeIds);
+        $activeCodes = $directQ->distinct()->pluck('branch_code')->toArray();
+
+        $officeQ = Performance::whereBetween('date', [$from, $to])->where('workplace_type', 'branch_office');
+        if (!empty($serviceTypeIds)) $officeQ->whereIn('service_type_id', $serviceTypeIds);
+        $activeOfficeIds = $officeQ->distinct()->pluck('branch_office_id');
+        $viaOfficeCodes = BranchOffice::whereIn('id', $activeOfficeIds)->distinct()->pluck('branch_code')->toArray();
+
+        $activeCodes = array_unique(array_merge($activeCodes, $viaOfficeCodes));
+
+        $branchQuery = Branch::whereNotIn('code', $activeCodes)->with('zone')->orderBy('code');
+        if ($level === self::LEVEL_ZONE) {
+            $branchQuery->where('zone_code', $entityId);
+        }
+
+        $branches = $branchQuery->get();
+
+        return [
+            'check_by' => 'branch',
+            'count'    => $branches->count(),
+            'entities' => $branches->map(fn($b) => [
+                'code'  => $b->code,
+                'name'  => $b->name,
+                'extra' => $b->zone?->name ?? '—',
+            ])->values()->toArray(),
+        ];
+    }
+
+    private function noPerformanceBranchOffices(string $level, $entityId, string $from, string $to, array $serviceTypeIds): array
+    {
+        $q = Performance::whereBetween('date', [$from, $to])->where('workplace_type', 'branch_office');
+        if (!empty($serviceTypeIds)) $q->whereIn('service_type_id', $serviceTypeIds);
+        $activeOfficeIds = $q->distinct()->pluck('branch_office_id')->toArray();
+
+        $officeQuery = BranchOffice::whereNotIn('id', $activeOfficeIds)->with('branch')->orderBy('branch_code');
+        if ($level === self::LEVEL_ZONE) {
+            $branchCodes = Branch::where('zone_code', $entityId)->pluck('code');
+            $officeQuery->whereIn('branch_code', $branchCodes);
+        } elseif ($level === self::LEVEL_BRANCH) {
+            $officeQuery->where('branch_code', $entityId);
+        }
+
+        $offices = $officeQuery->get();
+
+        return [
+            'check_by' => 'branch_office',
+            'count'    => $offices->count(),
+            'entities' => $offices->map(fn($o) => [
+                'code'  => $o->branch_code,
+                'name'  => $o->name,
+                'extra' => $o->branch?->name ?? '—',
+            ])->values()->toArray(),
+        ];
+    }
+
+    private function noPerformanceZones(string $from, string $to, array $serviceTypeIds): array
+    {
+        $zoneQ = Performance::whereBetween('date', [$from, $to])->where('workplace_type', 'zone');
+        if (!empty($serviceTypeIds)) $zoneQ->whereIn('service_type_id', $serviceTypeIds);
+        $directZoneCodes = $zoneQ->distinct()->pluck('zone_code')->toArray();
+
+        $branchQ = Performance::whereBetween('date', [$from, $to])->where('workplace_type', 'branch');
+        if (!empty($serviceTypeIds)) $branchQ->whereIn('service_type_id', $serviceTypeIds);
+        $activeBranchCodes = $branchQ->distinct()->pluck('branch_code');
+        $viaZoneCodes = Branch::whereIn('code', $activeBranchCodes)->distinct()->pluck('zone_code')->toArray();
+
+        $officeQ = Performance::whereBetween('date', [$from, $to])->where('workplace_type', 'branch_office');
+        if (!empty($serviceTypeIds)) $officeQ->whereIn('service_type_id', $serviceTypeIds);
+        $activeOfficeIds = $officeQ->distinct()->pluck('branch_office_id');
+        $viaOfficeBranchCodes = BranchOffice::whereIn('id', $activeOfficeIds)->distinct()->pluck('branch_code');
+        $viaOfficeZoneCodes = Branch::whereIn('code', $viaOfficeBranchCodes)->distinct()->pluck('zone_code')->toArray();
+
+        $activeZoneCodes = array_unique(array_merge($directZoneCodes, $viaZoneCodes, $viaOfficeZoneCodes));
+
+        $zones = Zone::whereNotIn('code', $activeZoneCodes)->orderBy('code')->get();
+
+        return [
+            'check_by' => 'zone',
+            'count'    => $zones->count(),
+            'entities' => $zones->map(fn($z) => [
+                'code'  => $z->code,
+                'name'  => $z->name,
+                'extra' => '',
             ])->values()->toArray(),
         ];
     }

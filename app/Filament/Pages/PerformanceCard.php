@@ -145,6 +145,19 @@ class PerformanceCard extends Page
                     ->live()
                     ->required(),
 
+                Select::make('no_performance_entity')
+                    ->label('موجودیت فاقد عملکرد')
+                    ->options(fn($get) => match ($get('level')) {
+                        'province' => ['employee' => 'پرسنل', 'branch' => 'شعبه', 'branch_office' => 'باجه', 'zone' => 'حوزه'],
+                        'zone'     => ['employee' => 'پرسنل', 'branch' => 'شعبه', 'branch_office' => 'باجه'],
+                        'branch'   => ['employee' => 'پرسنل', 'branch_office' => 'باجه'],
+                        default    => ['employee' => 'پرسنل'],
+                    })
+                    ->default('employee')
+                    ->required()
+                    ->visible(fn($get) => $get('report_type') === 'no_performance'
+                        && in_array($get('level'), ['province', 'zone', 'branch'])),
+
 
             ])
             ->statePath('data');
@@ -177,7 +190,8 @@ class PerformanceCard extends Page
 
         // ─── فاقد عملکرد ──────────────────────────────────────────────────────
         if ($data['report_type'] === 'no_performance') {
-            $this->noPerformanceResult = $service->noPerformance($data['level'], $entityId, $from, $to, $serviceTypeIds);
+            $checkBy = $data['no_performance_entity'] ?? 'employee';
+            $this->noPerformanceResult = $service->noPerformance($data['level'], $entityId, $from, $to, $serviceTypeIds, $checkBy);
             return;
         }
 
@@ -222,14 +236,15 @@ class PerformanceCard extends Page
         );
 
         return redirect()->route('reports.performance-card.export', [
-            'level'               => $data['level'],
-            'entity_id'           => $data['entity_id'] ?? 'all',
-            'from'                => $from,
-            'to'                  => $to,
-            'report_type'         => $data['report_type'],
-            'breakdown_by'     => $data['breakdown_by'] ?? null,
-            'service_type_ids' => $data['service_type_ids'] ?? [],
-            'format'           => $format,
+            'level'                => $data['level'],
+            'entity_id'            => $data['entity_id'] ?? 'all',
+            'from'                 => $from,
+            'to'                   => $to,
+            'report_type'          => $data['report_type'],
+            'breakdown_by'         => $data['breakdown_by'] ?? null,
+            'service_type_ids'     => $data['service_type_ids'] ?? [],
+            'no_performance_entity' => $data['no_performance_entity'] ?? 'employee',
+            'format'               => $format,
         ]);
     }
 

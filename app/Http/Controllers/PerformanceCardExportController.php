@@ -68,7 +68,8 @@ class PerformanceCardExportController extends Controller
 
         // ─── no performance ────────────────────────────────────────────────────
         if ($reportType === 'no_performance') {
-            $result = $service->noPerformance($level, $entityId, $from, $to, $serviceTypeIds);
+            $checkBy = $request->input('no_performance_entity', 'employee');
+            $result  = $service->noPerformance($level, $entityId, $from, $to, $serviceTypeIds, $checkBy);
             return $format === 'pdf'
                 ? $this->noPerformancePdf($result, $entityLabel, $levelLabel, $entityId, $from, $to)
                 : $this->noPerformanceExcel($result, $entityLabel, $levelLabel, $entityId, $from, $to);
@@ -484,43 +485,57 @@ class PerformanceCardExportController extends Controller
         $sheet->setRightToLeft(true);
         $sheet->setTitle('فاقد عملکرد');
 
+        $checkBy   = $result['check_by'] ?? 'employee';
+        $entities  = $result['entities'] ?? [];
+        $countUnit = match ($checkBy) { 'branch' => 'شعبه', 'branch_office' => 'باجه', 'zone' => 'حوزه', default => 'نفر' };
+        $col1Label = match ($checkBy) { 'branch' => 'کد شعبه', 'branch_office' => 'کد شعبه', 'zone' => 'کد حوزه', default => 'کد پرسنلی' };
+        $col2Label = match ($checkBy) { 'branch' => 'نام شعبه', 'branch_office' => 'نام باجه', 'zone' => 'نام حوزه', default => 'نام همکار' };
+        $col3Label = match ($checkBy) { 'branch' => 'حوزه', 'branch_office' => 'شعبه مادر', default => 'محل خدمت فعلی' };
+        $hasExtra  = $checkBy !== 'zone';
+        $totalCols = $hasExtra ? 4 : 3;
+        $lastCol   = Coordinate::stringFromColumnIndex($totalCols);
+
         $sheet->getCell('A1')->setValue('فاقد عملکرد — ' . $levelLabel . ': ' . $entityLabel . ' (کد: ' . $entityId . ')');
-        $sheet->mergeCells('A1:D1');
+        $sheet->mergeCells('A1:' . $lastCol . '1');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
 
         $sheet->getCell('A2')->setValue('بازه گزارش: ' . $this->jalali($from) . ' تا ' . $this->jalali($to));
-        $sheet->mergeCells('A2:D2');
+        $sheet->mergeCells('A2:' . $lastCol . '2');
 
-        $sheet->getCell('A3')->setValue('تعداد فاقد عملکرد: ' . $result['count'] . ' نفر     تاریخ اخذ: ' . $this->jalali(now()->toDateString()));
-        $sheet->mergeCells('A3:D3');
+        $sheet->getCell('A3')->setValue('تعداد فاقد عملکرد: ' . $result['count'] . ' ' . $countUnit . '     تاریخ اخذ: ' . $this->jalali(now()->toDateString()));
+        $sheet->mergeCells('A3:' . $lastCol . '3');
         $sheet->getStyle('A3')->getFont()->setItalic(true)->setSize(9)->getColor()->setRGB('6b7280');
 
         $headerRow = 5;
         $sheet->getCell('A' . $headerRow)->setValue('#');
-        $sheet->getCell('B' . $headerRow)->setValue('کد پرسنلی');
-        $sheet->getCell('C' . $headerRow)->setValue('نام همکار');
-        $sheet->getCell('D' . $headerRow)->setValue('محل خدمت فعلی');
-        $this->styleHeader($sheet, $headerRow, 4);
-        $sheet->getStyle('A' . $headerRow . ':D' . $headerRow)->applyFromArray([
+        $sheet->getCell('B' . $headerRow)->setValue($col1Label);
+        $sheet->getCell('C' . $headerRow)->setValue($col2Label);
+        if ($hasExtra) {
+            $sheet->getCell('D' . $headerRow)->setValue($col3Label);
+        }
+        $this->styleHeader($sheet, $headerRow, $totalCols);
+        $sheet->getStyle('A' . $headerRow . ':' . $lastCol . $headerRow)->applyFromArray([
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '7f1d1d']],
         ]);
-        $sheet->getStyle('A' . $headerRow . ':D' . $headerRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('A' . $headerRow . ':' . $lastCol . $headerRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
 
         $row = $headerRow + 1;
-        foreach ($result['employees'] as $idx => $emp) {
+        foreach ($entities as $idx => $item) {
             $sheet->getCell('A' . $row)->setValue($idx + 1);
-            $sheet->getCell('B' . $row)->setValue($emp['personnel_code']);
-            $sheet->getCell('C' . $row)->setValue($emp['full_name']);
-            $sheet->getCell('D' . $row)->setValue($emp['workplace']);
+            $sheet->getCell('B' . $row)->setValue($item['code']);
+            $sheet->getCell('C' . $row)->setValue($item['name']);
+            if ($hasExtra) {
+                $sheet->getCell('D' . $row)->setValue($item['extra']);
+            }
             if ($idx % 2 === 0) {
-                $sheet->getStyle('A' . $row . ':D' . $row)->getFill()
+                $sheet->getStyle('A' . $row . ':' . $lastCol . $row)->getFill()
                     ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('fff5f5');
             }
             $row++;
         }
 
-        foreach (['A', 'B', 'C', 'D'] as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
+        foreach (range(1, $totalCols) as $c) {
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setAutoSize(true);
         }
 
         return $this->streamExcel($spreadsheet, 'performance-card-no-performance.xlsx');

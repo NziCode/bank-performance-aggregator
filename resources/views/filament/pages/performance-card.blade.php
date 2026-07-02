@@ -31,6 +31,13 @@
                 ?? ($breakdownResult ? $breakdownResult[0]['grand_total'] : null)
                 ?? ($noPerformanceResult ? ['all' => $noPerformanceResult['count'], 2 => null, 1 => null, 3 => null] : null)
                 ?? ['all' => count($detailedResult ?? []), 2 => null, 1 => null, 3 => null];
+            $npCheckBy = $noPerformanceResult['check_by'] ?? 'employee';
+            $npCountLabel = match($npCheckBy) {
+                'branch'        => 'شعبه',
+                'branch_office' => 'باجه',
+                'zone'          => 'حوزه',
+                default         => 'نفر',
+            };
         @endphp
         <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);padding:16px 20px;margin-bottom:16px;">
             <div style="font-size:17px;font-weight:bold;color:#1e3a5f;margin-bottom:6px;">
@@ -45,7 +52,7 @@
             @if($gt['all'] !== null)
                 <div style="display:flex;gap:20px;font-size:13px;flex-wrap:wrap;">
                     @if($noPerformanceResult)
-                        <span style="color:#b91c1c;font-weight:bold;">فاقد عملکرد: <strong>{{ $gt['all'] }} نفر</strong></span>
+                        <span style="color:#b91c1c;font-weight:bold;">فاقد عملکرد: <strong>{{ $gt['all'] }} {{ $npCountLabel }}</strong></span>
                     @else
                         <span style="color:#374151;">مجموع کل: <strong>{{ $gt['all'] }}</strong></span>
                         @if($gt[2] !== null)
@@ -280,16 +287,35 @@
 
     {{-- ─── فاقد عملکرد ──────────────────────────────────────────────────── --}}
     @if($noPerformanceResult)
+        @php
+            $npItems     = $noPerformanceResult['entities'] ?? [];
+            $npCount     = $noPerformanceResult['count'];
+            $npCol1      = match($npCheckBy) { 'branch' => 'کد شعبه', 'branch_office' => 'کد شعبه', 'zone' => 'کد حوزه', default => 'کد پرسنلی' };
+            $npCol2      = match($npCheckBy) { 'branch' => 'نام شعبه', 'branch_office' => 'نام باجه', 'zone' => 'نام حوزه', default => 'نام همکار' };
+            $npCol3      = match($npCheckBy) { 'branch' => 'حوزه', 'branch_office' => 'شعبه مادر', default => 'محل خدمت فعلی' };
+            $npEmptyMsg  = match($npCheckBy) {
+                'branch'        => '✓ همه شعب در این بازه عملکرد ثبت کرده‌اند.',
+                'branch_office' => '✓ همه باجه‌ها در این بازه عملکرد ثبت کرده‌اند.',
+                'zone'          => '✓ همه حوزه‌ها در این بازه عملکرد ثبت کرده‌اند.',
+                default         => '✓ همه همکاران در این بازه عملکرد ثبت کرده‌اند.',
+            };
+            $npTitle = match($npCheckBy) {
+                'branch'        => 'شعب فاقد عملکرد',
+                'branch_office' => 'باجه‌های فاقد عملکرد',
+                'zone'          => 'حوزه‌های فاقد عملکرد',
+                default         => 'پرسنل فاقد عملکرد',
+            };
+        @endphp
         <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);overflow:hidden;">
             <div style="padding:12px 20px;border-bottom:1px solid #f3f4f6;display:flex;align-items:center;gap:12px;">
-                <div style="font-size:16px;font-weight:bold;color:#b91c1c;">فاقد عملکرد</div>
+                <div style="font-size:16px;font-weight:bold;color:#b91c1c;">{{ $npTitle }}</div>
                 <span style="background:#fee2e2;color:#b91c1c;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600;">
-                    {{ $noPerformanceResult['count'] }} نفر
+                    {{ $npCount }} {{ $npCountLabel }}
                 </span>
             </div>
-            @if($noPerformanceResult['count'] === 0)
+            @if($npCount === 0)
                 <div style="padding:40px;text-align:center;color:#16a34a;font-size:13px;">
-                    ✓ همه همکاران در این بازه عملکرد ثبت کرده‌اند.
+                    {{ $npEmptyMsg }}
                 </div>
             @else
                 <div style="overflow-x:auto;">
@@ -297,18 +323,22 @@
                         <thead>
                             <tr style="background:#7f1d1d;color:#fff;">
                                 <th style="padding:10px 16px;text-align:right;white-space:nowrap;">#</th>
-                                <th style="padding:10px 16px;text-align:right;white-space:nowrap;">کد پرسنلی</th>
-                                <th style="padding:10px 16px;text-align:right;white-space:nowrap;">نام همکار</th>
-                                <th style="padding:10px 16px;text-align:right;white-space:nowrap;">محل خدمت فعلی</th>
+                                <th style="padding:10px 16px;text-align:right;white-space:nowrap;">{{ $npCol1 }}</th>
+                                <th style="padding:10px 16px;text-align:right;white-space:nowrap;">{{ $npCol2 }}</th>
+                                @if($npCheckBy !== 'zone')
+                                    <th style="padding:10px 16px;text-align:right;white-space:nowrap;">{{ $npCol3 }}</th>
+                                @endif
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach($noPerformanceResult['employees'] as $idx => $emp)
+                            @foreach($npItems as $idx => $item)
                                 <tr style="background:{{ $idx % 2 === 0 ? '#fff5f5' : '#fff' }};border-bottom:1px solid #fee2e2;">
                                     <td style="padding:9px 16px;color:#9ca3af;">{{ $idx + 1 }}</td>
-                                    <td style="padding:9px 16px;font-family:monospace;">{{ $emp['personnel_code'] }}</td>
-                                    <td style="padding:9px 16px;font-weight:500;">{{ $emp['full_name'] }}</td>
-                                    <td style="padding:9px 16px;color:#6b7280;font-size:12px;">{{ $emp['workplace'] }}</td>
+                                    <td style="padding:9px 16px;font-family:monospace;">{{ $item['code'] }}</td>
+                                    <td style="padding:9px 16px;font-weight:500;">{{ $item['name'] }}</td>
+                                    @if($npCheckBy !== 'zone')
+                                        <td style="padding:9px 16px;color:#6b7280;font-size:12px;">{{ $item['extra'] }}</td>
+                                    @endif
                                 </tr>
                             @endforeach
                         </tbody>
