@@ -112,6 +112,13 @@
         تعداد فاقد عملکرد در این بازه: {{ $result['count'] }} {{ $countUnit }}
     </div>
 
+    @if($result['count'] > 0)
+        <div style="font-size:11px;font-weight:bold;color:#7f1d1d;padding:5px 8px;background:#fee2e2;margin:0 0 8px;border-right:3px solid #7f1d1d;text-align:right;">
+            نمودار توزیع
+        </div>
+        <div style="text-align:center;margin-bottom:12px;">{!! $chartSvg !!}</div>
+    @endif
+
     @if($result['count'] === 0)
         <div class="empty-msg">✓ {{ $emptyMsg }}</div>
     @else

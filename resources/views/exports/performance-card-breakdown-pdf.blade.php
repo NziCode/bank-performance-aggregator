@@ -81,7 +81,7 @@
 <body>
 
     <div class="header-box">
-        <div class="header-title">کارنامه عملکرد — {{ $levelLabel }}: {{ $entityLabel }} — ریزبندی: {{ collect($results)->pluck('breakdown_label')->join('، ') }}</div>
+        <div class="header-title">کارنامه عملکرد — {{ $levelLabel }}: {{ $entityLabel }} — ریزبندی: {{ $result['breakdown_label'] }}</div>
         <div class="header-meta">
             <span>بازه گزارش: {{ $fromJalali }} تا {{ $toJalali }}</span>
             <span>تاریخ اخذ گزارش: {{ $reportDate }}</span>
@@ -90,13 +90,18 @@
     </div>
 
     <div class="summary-bar">
-        <span style="color:#374151;">مجموع کل: <strong>{{ $results[0]['grand_total']['all'] }}</strong></span>
-        <span class="approved">✓ تایید: <strong>{{ $results[0]['grand_total'][2] }}</strong></span>
-        <span class="pending">⏳ انتظار: <strong>{{ $results[0]['grand_total'][1] }}</strong></span>
-        <span class="rejected">✗ رد: <strong>{{ $results[0]['grand_total'][3] }}</strong></span>
+        <span style="color:#374151;">مجموع کل: <strong>{{ $result['grand_total']['all'] }}</strong></span>
+        <span class="approved">✓ تایید: <strong>{{ $result['grand_total'][2] }}</strong></span>
+        <span class="pending">⏳ انتظار: <strong>{{ $result['grand_total'][1] }}</strong></span>
+        <span class="rejected">✗ رد: <strong>{{ $result['grand_total'][3] }}</strong></span>
+        <span style="color:#b91c1c;">⚑ کم‌عملکرد: <strong>{{ $result['low_performance_count'] }}</strong></span>
     </div>
 
-    @foreach($results as $result)
+    <div class="section-title" style="font-size:10px;font-weight:bold;color:#1e3a5f;padding:5px 8px;background:#dbeafe;margin:10px 0 4px;border-right:3px solid #1e3a5f;">
+        نمودار عملکرد
+    </div>
+    <div style="text-align:center;margin-bottom:12px;">{!! $chartSvg !!}</div>
+
     <div class="section-title" style="font-size:10px;font-weight:bold;color:#1e3a5f;padding:5px 8px;background:#dbeafe;margin:10px 0 4px;border-right:3px solid #1e3a5f;">
         آمار به تفکیک {{ $result['breakdown_label'] }}
     </div>
@@ -104,6 +109,7 @@
         <thead>
             <tr>
                 <th class="col-label" rowspan="2" style="vertical-align:middle;">{{ $result['breakdown_label'] }}</th>
+                <th rowspan="2" style="vertical-align:middle;">کم‌عملکرد</th>
                 @foreach($result['service_types'] as $type)
                     <th colspan="4" style="border-bottom:1px solid #2d5a8e;">{{ $type }}</th>
                 @endforeach
@@ -126,6 +132,13 @@
             @foreach($result['rows'] as $idx => $row)
                 <tr class="{{ $idx % 2 === 0 ? 'even' : 'odd' }}">
                     <td class="col-label">{{ $row['label'] }}</td>
+                    <td class="center">
+                        @if($row['low_performance'])
+                            <span class="badge rejected">کم‌عملکرد</span>
+                        @else
+                            —
+                        @endif
+                    </td>
                     @foreach($result['service_types'] as $type)
                         @php $cell = $row['services'][$type]; @endphp
                         <td class="num-all">{{ $cell['all'] }}</td>
@@ -140,7 +153,7 @@
                 </tr>
             @endforeach
             <tr class="total-row">
-                <td class="col-label">جمع کل</td>
+                <td class="col-label" colspan="2">جمع کل</td>
                 @foreach($result['service_types'] as $type)
                     @php
                         $all = array_sum(array_map(fn($r) => $r['services'][$type]['all'], $result['rows']));
@@ -160,7 +173,6 @@
             </tr>
         </tbody>
     </table>
-    @endforeach
 
     <div class="footer">
         این گزارش توسط سامانه ارزیابی عملکرد تهیه شده است — {{ $preparedBy }} — تاریخ: {{ $reportDate }}

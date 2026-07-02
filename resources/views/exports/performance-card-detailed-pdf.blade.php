@@ -97,6 +97,9 @@
         </div>
     </div>
 
+    <div class="section-title">نمودار عملکرد</div>
+    <div style="text-align:center;margin-bottom:12px;">{!! $chartSvg !!}</div>
+
     <div class="section-title">کارنامه جزئی — {{ $entityLabel }}</div>
 
     <table>

@@ -8,13 +8,21 @@ use App\Models\StaffUnit;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\PdfService;
+use App\Services\Report\ChartSvgRenderer;
 use App\Services\Report\PerformanceReportService;
 use Illuminate\Http\Request;
 use Morilog\Jalali\Jalalian;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Chart\Chart;
+use PhpOffice\PhpSpreadsheet\Chart\DataSeries;
+use PhpOffice\PhpSpreadsheet\Chart\DataSeriesValues;
+use PhpOffice\PhpSpreadsheet\Chart\Legend;
+use PhpOffice\PhpSpreadsheet\Chart\PlotArea;
+use PhpOffice\PhpSpreadsheet\Chart\Title;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -25,59 +33,60 @@ class PerformanceCardExportController extends Controller
     public function __invoke(Request $request, PerformanceReportService $service): Response
     {
         $request->validate([
-            'level'       => ['required', 'string'],
-            'entity_id'   => ['required_unless:level,province'],
-            'from'        => ['required', 'date'],
-            'to'          => ['required', 'date'],
-            'report_type' => ['required', 'in:summary,detailed,no_performance'],
-            'format'      => ['required', 'in:excel,pdf'],
+            'level'                     => ['required', 'string'],
+            'entity_id'                 => ['required_unless:level,province'],
+            'from'                      => ['required', 'date'],
+            'to'                        => ['required', 'date'],
+            'report_type'               => ['required', 'in:summary,detailed,no_performance'],
+            'breakdown_by'              => ['nullable', 'string'],
+            'sort_by'                   => ['nullable', 'string'],
+            'sort_dir'                  => ['nullable', 'string'],
+            'low_performance_threshold' => ['nullable', 'integer', 'min:0'],
+            'format'                    => ['required', 'in:excel,pdf'],
         ]);
 
-        $level           = $request->level;
-        $entityId        = $request->entity_id ?? 'all';
-        $from            = $request->from;
-        $to              = $request->to;
-        $includeSubOff   = $request->boolean('include_sub_offices');
-        $breakdownBy     = $request->breakdown_by;
-        $serviceTypeIds  = array_filter((array) $request->input('service_type_ids', []));
-        $reportType      = $request->report_type;
-        $format          = $request->format;
+        $level          = $request->level;
+        $entityId       = $request->entity_id ?? 'all';
+        $from           = $request->from;
+        $to             = $request->to;
+        $breakdownBy    = $request->input('breakdown_by');
+        $serviceTypeIds = array_filter((array) $request->input('service_type_ids', []));
+        $reportType     = $request->report_type;
+        $format         = $request->format;
+        $sortBy         = $request->input('sort_by', 'total');
+        $sortDir        = $request->input('sort_dir', 'desc');
+        $threshold      = (int) $request->input('low_performance_threshold', 5);
 
         $entityLabel = $this->resolveEntityLabel($level, $entityId);
         $levelLabel  = PerformanceReportService::levelLabels()[$level] ?? $level;
 
-        // ─── breakdown summary ─────────────────────────────────────────────────
-        $breakdownKeys = array_filter((array) $request->input('breakdown_by', []));
-        if ($reportType === 'summary' && !empty($breakdownKeys)) {
-            $results = [];
-            foreach ($breakdownKeys as $bd) {
-                $results[] = $service->breakdownSummary($level, $entityId, $from, $to, $bd, $serviceTypeIds);
-            }
+        // ─── ریزبندی (breakdown summary) ───────────────────────────────────────
+        if ($reportType === 'summary' && $breakdownBy) {
+            $result = $service->breakdownSummary($level, $entityId, $from, $to, $breakdownBy, $serviceTypeIds, $threshold, $sortBy, $sortDir);
             return $format === 'pdf'
-                ? $this->breakdownPdf($results, $entityLabel, $levelLabel, $entityId, $from, $to)
-                : $this->breakdownExcel($results, $entityLabel, $levelLabel, $entityId, $from, $to);
+                ? $this->breakdownPdf($result, $entityLabel, $levelLabel, $entityId, $from, $to)
+                : $this->breakdownExcel($result, $entityLabel, $levelLabel, $entityId, $from, $to);
         }
 
-        // ─── normal summary ────────────────────────────────────────────────────
+        // ─── گزارش کلی ────────────────────────────────────────────────────────
         if ($reportType === 'summary') {
-            $result = $service->summary($level, $entityId, $from, $to, $includeSubOff, $serviceTypeIds);
+            $result = $service->summary($level, $entityId, $from, $to, false, $serviceTypeIds, $threshold, $sortBy, $sortDir);
             return $format === 'pdf'
                 ? $this->summaryPdf($result, $entityLabel, $levelLabel, $entityId, $from, $to)
                 : $this->summaryExcel($result, $entityLabel, $levelLabel, $entityId, $from, $to);
         }
 
-        // ─── no performance ────────────────────────────────────────────────────
+        // ─── فاقد عملکرد ────────────────────────────────────────────────────────
         if ($reportType === 'no_performance') {
-            $bk      = array_filter((array) $request->input('breakdown_by', []));
-            $checkBy = !empty($bk) ? reset($bk) : 'employee';
+            $checkBy = $breakdownBy ?: 'employee';
             $result  = $service->noPerformance($level, $entityId, $from, $to, $serviceTypeIds, $checkBy);
             return $format === 'pdf'
                 ? $this->noPerformancePdf($result, $entityLabel, $levelLabel, $entityId, $from, $to)
                 : $this->noPerformanceExcel($result, $entityLabel, $levelLabel, $entityId, $from, $to);
         }
 
-        // ─── detailed ──────────────────────────────────────────────────────────
-        $records = $service->detailed($level, $entityId, $from, $to, $includeSubOff, $serviceTypeIds);
+        // ─── جزئی ───────────────────────────────────────────────────────────────
+        $records = $service->detailed($level, $entityId, $from, $to, false, $serviceTypeIds);
         return $format === 'pdf'
             ? $this->detailedPdf($records, $entityLabel, $levelLabel, $entityId, $from, $to)
             : $this->detailedExcel($records, $entityLabel, $levelLabel, $entityId, $from, $to);
@@ -85,10 +94,16 @@ class PerformanceCardExportController extends Controller
 
     // ─── PDF ───────────────────────────────────────────────────────────────────
 
-    private function breakdownPdf(array $results, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
+    private function breakdownPdf(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
     {
+        $chartSvg = ChartSvgRenderer::stackedBar(
+            PerformanceReportService::chartTopRows($result['rows'], 'label', 'grand_total', 10),
+            ['title' => 'برترین موارد به تفکیک ' . $result['breakdown_label']]
+        );
+
         $html = view('exports.performance-card-breakdown-pdf', [
-            'results'     => $results,
+            'result'      => $result,
+            'chartSvg'    => $chartSvg,
             'entityLabel' => $entityLabel,
             'levelLabel'  => $levelLabel,
             'entityId'    => $entityId,
@@ -106,8 +121,20 @@ class PerformanceCardExportController extends Controller
 
     private function summaryPdf(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
     {
+        $chartSvg = [
+            'composition'  => ChartSvgRenderer::donut(
+                PerformanceReportService::chartServiceTypeComposition($result['totals']),
+                ['title' => 'ترکیب بر اساس نوع خدمت']
+            ),
+            'top_entities' => ChartSvgRenderer::stackedBar(
+                PerformanceReportService::chartTopRows($result['by_employee'], 'full_name', 'total', 10),
+                ['title' => 'همکاران برتر']
+            ),
+        ];
+
         $html = view('exports.performance-card-summary-pdf', [
             'result'      => $result,
+            'chartSvg'    => $chartSvg,
             'entityLabel' => $entityLabel,
             'levelLabel'  => $levelLabel,
             'entityId'    => $entityId,
@@ -125,8 +152,14 @@ class PerformanceCardExportController extends Controller
 
     private function detailedPdf($records, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
     {
+        $chartSvg = ChartSvgRenderer::donut(
+            PerformanceReportService::statusDistribution($records),
+            ['title' => 'ترکیب وضعیت رکوردها']
+        );
+
         $html = view('exports.performance-card-detailed-pdf', [
             'records'     => $records,
+            'chartSvg'    => $chartSvg,
             'entityLabel' => $entityLabel,
             'levelLabel'  => $levelLabel,
             'entityId'    => $entityId,
@@ -142,21 +175,45 @@ class PerformanceCardExportController extends Controller
         );
     }
 
+    private function noPerformancePdf(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
+    {
+        $chartSvg = ChartSvgRenderer::bar(
+            $result['by_extra'] ?? [],
+            ['title' => 'توزیع فاقد عملکرد بر اساس گروه']
+        );
+
+        $html = view('exports.performance-card-no-performance-pdf', [
+            'result'      => $result,
+            'chartSvg'    => $chartSvg,
+            'entityLabel' => $entityLabel,
+            'levelLabel'  => $levelLabel,
+            'entityId'    => $entityId,
+            'fromJalali'  => $this->jalali($from),
+            'toJalali'    => $this->jalali($to),
+            'reportDate'  => $this->jalali(now()->toDateString()),
+            'preparedBy'  => $this->preparedBy,
+        ])->render();
+
+        return PdfService::download(
+            PdfService::make($html, 'P'),
+            'performance-card-no-performance.pdf'
+        );
+    }
+
     // ─── Excel ─────────────────────────────────────────────────────────────────
 
-    private function breakdownExcel(array $results, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
+    private function breakdownExcel(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
     {
         $spreadsheet = new Spreadsheet();
         $sheet       = $spreadsheet->getActiveSheet();
         $sheet->setRightToLeft(true);
         $sheet->setTitle('ریزبندی');
 
-        $maxServiceCount = max(array_map(fn($r) => count($r['service_types']), $results));
-        $totalCols       = 1 + $maxServiceCount * 4 + 4;
-        $lastLetter      = Coordinate::stringFromColumnIndex($totalCols);
+        $serviceCount = count($result['service_types']);
+        $totalCols    = 2 + $serviceCount * 4 + 4; // label + low-perf flag + services + grand total
+        $lastLetter   = Coordinate::stringFromColumnIndex($totalCols);
 
-        $labels = implode('، ', array_column($results, 'breakdown_label'));
-        $sheet->getCell('A1')->setValue('کارنامه — ' . $levelLabel . ': ' . $entityLabel . ' — ریزبندی: ' . $labels);
+        $sheet->getCell('A1')->setValue('کارنامه — ' . $levelLabel . ': ' . $entityLabel . ' — ریزبندی: ' . $result['breakdown_label']);
         $sheet->mergeCells('A1:' . $lastLetter . '1');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(13);
 
@@ -164,102 +221,111 @@ class PerformanceCardExportController extends Controller
         $sheet->mergeCells('A2:' . $lastLetter . '2');
         $sheet->getStyle('A2')->getFont()->setItalic(true)->setSize(9)->getColor()->setRGB('6b7280');
 
-        $row = 4;
-        foreach ($results as $result) {
-            $serviceCount = count($result['service_types']);
-            $secCols      = 1 + $serviceCount * 4 + 4;
-            $secLetter    = Coordinate::stringFromColumnIndex($secCols);
+        $sheet->getCell('A3')->setValue('تعداد موارد کم‌عملکرد: ' . $result['low_performance_count']);
+        $sheet->mergeCells('A3:' . $lastLetter . '3');
+        $sheet->getStyle('A3')->getFont()->setBold(true)->getColor()->setRGB('b91c1c');
 
-            // Section title
-            $sheet->getCell('A' . $row)->setValue('آمار به تفکیک ' . $result['breakdown_label']);
-            $sheet->mergeCells('A' . $row . ':' . $secLetter . $row);
-            $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(11);
-            $sheet->getStyle('A' . $row)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('dbeafe');
-            $row++;
+        $row = 5;
+        $hr1 = $row;
+        $hr2 = $row + 1;
 
-            $hr1 = $row;
-            $hr2 = $row + 1;
+        $sheet->mergeCells('A' . $hr1 . ':A' . $hr2);
+        $sheet->getCell('A' . $hr1)->setValue($result['breakdown_label']);
+        $sheet->mergeCells('B' . $hr1 . ':B' . $hr2);
+        $sheet->getCell('B' . $hr1)->setValue('کم‌عملکرد');
 
-            $sheet->mergeCells('A' . $hr1 . ':A' . $hr2);
-            $sheet->getCell('A' . $hr1)->setValue($result['breakdown_label']);
-
-            $col = 2;
-            foreach ($result['service_types'] as $type) {
-                $s = Coordinate::stringFromColumnIndex($col);
-                $e = Coordinate::stringFromColumnIndex($col + 3);
-                $sheet->mergeCells($s . $hr1 . ':' . $e . $hr1);
-                $sheet->getCell($s . $hr1)->setValue($type);
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $hr2)->setValue('کل');
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $hr2)->setValue('تایید');
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $hr2)->setValue('انتظار');
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $hr2)->setValue('رد');
-                $col += 4;
-            }
+        $col = 3;
+        foreach ($result['service_types'] as $type) {
             $s = Coordinate::stringFromColumnIndex($col);
             $e = Coordinate::stringFromColumnIndex($col + 3);
             $sheet->mergeCells($s . $hr1 . ':' . $e . $hr1);
-            $sheet->getCell($s . $hr1)->setValue('جمع کل');
+            $sheet->getCell($s . $hr1)->setValue($type);
             $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $hr2)->setValue('کل');
             $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $hr2)->setValue('تایید');
             $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $hr2)->setValue('انتظار');
             $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $hr2)->setValue('رد');
+            $col += 4;
+        }
+        $s = Coordinate::stringFromColumnIndex($col);
+        $e = Coordinate::stringFromColumnIndex($col + 3);
+        $sheet->mergeCells($s . $hr1 . ':' . $e . $hr1);
+        $sheet->getCell($s . $hr1)->setValue('جمع کل');
+        $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $hr2)->setValue('کل');
+        $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $hr2)->setValue('تایید');
+        $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $hr2)->setValue('انتظار');
+        $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $hr2)->setValue('رد');
 
-            $this->styleHeader($sheet, $hr1, $secCols);
-            $this->styleHeader($sheet, $hr2, $secCols);
-            $sheet->getStyle('A' . $hr1)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $this->styleHeader($sheet, $hr1, $totalCols);
+        $this->styleHeader($sheet, $hr2, $totalCols);
+        $sheet->getStyle('A' . $hr1 . ':B' . $hr1)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
 
-            $row = $hr2 + 1;
-            foreach ($result['rows'] as $idx => $breakRow) {
-                $sheet->getCell('A' . $row)->setValue($breakRow['label']);
-                $col = 2;
-                foreach ($result['service_types'] as $type) {
-                    $cell = $breakRow['services'][$type];
-                    $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($cell['all']);
-                    $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($cell[2]);
-                    $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($cell[1]);
-                    $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($cell[3]);
-                    $col += 4;
-                }
-                $gt = $breakRow['grand_total'];
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($gt['all']);
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($gt[2]);
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($gt[1]);
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($gt[3]);
-                if ($idx % 2 === 0) {
-                    $sheet->getStyle('A' . $row . ':' . $secLetter . $row)->getFill()
-                        ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('f9fafb');
-                }
-                $row++;
+        $row = $hr2 + 1;
+        foreach ($result['rows'] as $idx => $breakRow) {
+            $sheet->getCell('A' . $row)->setValue($breakRow['label']);
+            $sheet->getCell('B' . $row)->setValue($breakRow['low_performance'] ? 'بله' : '—');
+            if ($breakRow['low_performance']) {
+                $sheet->getStyle('B' . $row)->getFont()->setBold(true)->getColor()->setRGB('b91c1c');
             }
-
-            // Total row for this section
-            $sheet->getCell('A' . $row)->setValue('جمع کل');
-            $col = 2;
+            $col = 3;
             foreach ($result['service_types'] as $type) {
-                $totAll = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 'all'));
-                $totApp = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 2));
-                $totPen = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 1));
-                $totRej = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 3));
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($totAll);
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($totApp);
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($totPen);
-                $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($totRej);
+                $cell = $breakRow['services'][$type];
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($cell['all']);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($cell[2]);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($cell[1]);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($cell[3]);
                 $col += 4;
             }
-            $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($result['grand_total']['all']);
-            $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($result['grand_total'][2]);
-            $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($result['grand_total'][1]);
-            $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($result['grand_total'][3]);
-            $sheet->getStyle('A' . $row . ':' . $secLetter . $row)->getFont()->setBold(true);
-            $sheet->getStyle('A' . $row . ':' . $secLetter . $row)->getFill()
-                ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('eff6ff');
-
-            $row += 2; // blank row between sections
+            $gt = $breakRow['grand_total'];
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($gt['all']);
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($gt[2]);
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($gt[1]);
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($gt[3]);
+            if ($idx % 2 === 0) {
+                $sheet->getStyle('A' . $row . ':' . $lastLetter . $row)->getFill()
+                    ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('f9fafb');
+            }
+            $row++;
         }
+
+        // Total row
+        $sheet->getCell('A' . $row)->setValue('جمع کل');
+        $col = 3;
+        foreach ($result['service_types'] as $type) {
+            $totAll = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 'all'));
+            $totApp = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 2));
+            $totPen = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 1));
+            $totRej = array_sum(array_column(array_map(fn($r) => $r['services'][$type], $result['rows']), 3));
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($totAll);
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($totApp);
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($totPen);
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($totRej);
+            $col += 4;
+        }
+        $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($result['grand_total']['all']);
+        $sheet->getCell(Coordinate::stringFromColumnIndex($col+1) . $row)->setValue($result['grand_total'][2]);
+        $sheet->getCell(Coordinate::stringFromColumnIndex($col+2) . $row)->setValue($result['grand_total'][1]);
+        $sheet->getCell(Coordinate::stringFromColumnIndex($col+3) . $row)->setValue($result['grand_total'][3]);
+        $sheet->getStyle('A' . $row . ':' . $lastLetter . $row)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $row . ':' . $lastLetter . $row)->getFill()
+            ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('eff6ff');
 
         foreach (range(1, $totalCols) as $c) {
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setAutoSize(true);
         }
+
+        // Native chart: top 10 rows, approved/pending/rejected clustered bar
+        $topRows = PerformanceReportService::chartTopRows($result['rows'], 'label', 'grand_total', 10);
+        $this->addBarChart(
+            $sheet,
+            $row + 3,
+            'برترین موارد به تفکیک ' . $result['breakdown_label'],
+            array_column($topRows, 'label'),
+            [
+                'تایید' => array_column($topRows, 'approved'),
+                'انتظار' => array_column($topRows, 'pending'),
+                'رد'    => array_column($topRows, 'rejected'),
+            ]
+        );
 
         return $this->streamExcel($spreadsheet, 'performance-card-breakdown.xlsx');
     }
@@ -288,7 +354,8 @@ class PerformanceCardExportController extends Controller
             'مجموع کل: ' . $result['grand_total']['all'] .
             '    تایید: ' . $result['grand_total'][2] .
             '    انتظار: ' . $result['grand_total'][1] .
-            '    رد: ' . $result['grand_total'][3]
+            '    رد: ' . $result['grand_total'][3] .
+            '    کم‌عملکرد: ' . $result['low_performance_count']
         );
         $sheet->mergeCells('A4:E4');
         $sheet->getStyle('A4')->getFont()->setBold(true)->setSize(10);
@@ -334,10 +401,12 @@ class PerformanceCardExportController extends Controller
         $sheet->getStyle('A' . $row . ':E' . $row)->getFill()
             ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('eff6ff');
 
+        $lastDataRow = $row;
+
         // ─── ریز همکاران ───
         if (count($result['by_employee']) > 1) {
             $serviceCount  = count($result['service_types']);
-            $empTotalCols  = 3 + $serviceCount * 4 + 4; // code + name + workplace + (4 per service) + 4 grand total
+            $empTotalCols  = 4 + $serviceCount * 4 + 4; // code + name + workplace + low-perf + (4 per service) + 4 grand total
             $empLastLetter = Coordinate::stringFromColumnIndex($empTotalCols);
 
             $row += 2;
@@ -354,8 +423,10 @@ class PerformanceCardExportController extends Controller
             $sheet->getCell('B' . $hr1)->setValue('نام همکار');
             $sheet->mergeCells('C' . $hr1 . ':C' . $hr2);
             $sheet->getCell('C' . $hr1)->setValue('محل خدمت');
+            $sheet->mergeCells('D' . $hr1 . ':D' . $hr2);
+            $sheet->getCell('D' . $hr1)->setValue('کم‌عملکرد');
 
-            $col = 4;
+            $col = 5;
             foreach ($result['service_types'] as $type) {
                 $s = Coordinate::stringFromColumnIndex($col);
                 $e = Coordinate::stringFromColumnIndex($col + 3);
@@ -378,14 +449,18 @@ class PerformanceCardExportController extends Controller
 
             $this->styleHeader($sheet, $hr1, $empTotalCols);
             $this->styleHeader($sheet, $hr2, $empTotalCols);
-            $sheet->getStyle('A' . $hr1 . ':C' . $hr1)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('A' . $hr1 . ':D' . $hr1)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
 
             $row = $hr2 + 1;
             foreach ($result['by_employee'] as $idx => $emp) {
                 $sheet->getCell('A' . $row)->setValue($emp['personnel_code']);
                 $sheet->getCell('B' . $row)->setValue($emp['full_name']);
                 $sheet->getCell('C' . $row)->setValue($emp['workplace']);
-                $col = 4;
+                $sheet->getCell('D' . $row)->setValue($emp['low_performance'] ? 'بله' : '—');
+                if ($emp['low_performance']) {
+                    $sheet->getStyle('D' . $row)->getFont()->setBold(true)->getColor()->setRGB('b91c1c');
+                }
+                $col = 5;
                 foreach ($result['service_types'] as $type) {
                     $cell = $emp['services'][$type];
                     $sheet->getCell(Coordinate::stringFromColumnIndex($col)   . $row)->setValue($cell['all']);
@@ -408,10 +483,35 @@ class PerformanceCardExportController extends Controller
             foreach (range(1, $empTotalCols) as $c) {
                 $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setAutoSize(true);
             }
+            $lastDataRow = $row;
         } else {
             foreach (['A', 'B', 'C', 'D', 'E'] as $col) {
                 $sheet->getColumnDimension($col)->setAutoSize(true);
             }
+        }
+
+        // Native charts: service-type composition (single series) + top-10 employees (3-series)
+        $chartRow = $this->addBarChart(
+            $sheet,
+            $lastDataRow + 3,
+            'ترکیب بر اساس نوع خدمت',
+            $result['service_types'],
+            ['تعداد کل' => array_map(fn($t) => $result['totals'][$t]['all'], $result['service_types'])]
+        );
+
+        $topRows = PerformanceReportService::chartTopRows($result['by_employee'], 'full_name', 'total', 10);
+        if (!empty($topRows)) {
+            $this->addBarChart(
+                $sheet,
+                $chartRow,
+                'همکاران برتر',
+                array_column($topRows, 'label'),
+                [
+                    'تایید'  => array_column($topRows, 'approved'),
+                    'انتظار' => array_column($topRows, 'pending'),
+                    'رد'     => array_column($topRows, 'rejected'),
+                ]
+            );
         }
 
         return $this->streamExcel($spreadsheet, 'performance-card-summary.xlsx');
@@ -457,26 +557,16 @@ class PerformanceCardExportController extends Controller
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
-        return $this->streamExcel($spreadsheet, 'performance-card-detailed.xlsx');
-    }
-
-    private function noPerformancePdf(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
-    {
-        $html = view('exports.performance-card-no-performance-pdf', [
-            'result'      => $result,
-            'entityLabel' => $entityLabel,
-            'levelLabel'  => $levelLabel,
-            'entityId'    => $entityId,
-            'fromJalali'  => $this->jalali($from),
-            'toJalali'    => $this->jalali($to),
-            'reportDate'  => $this->jalali(now()->toDateString()),
-            'preparedBy'  => $this->preparedBy,
-        ])->render();
-
-        return PdfService::download(
-            PdfService::make($html, 'P'),
-            'performance-card-no-performance.pdf'
+        $distribution = PerformanceReportService::statusDistribution($records);
+        $this->addBarChart(
+            $sheet,
+            $row + 3,
+            'ترکیب وضعیت رکوردها',
+            array_keys($distribution),
+            ['تعداد' => array_values($distribution)]
         );
+
+        return $this->streamExcel($spreadsheet, 'performance-card-detailed.xlsx');
     }
 
     private function noPerformanceExcel(array $result, ?string $entityLabel, string $levelLabel, $entityId, string $from, string $to): Response
@@ -539,6 +629,17 @@ class PerformanceCardExportController extends Controller
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setAutoSize(true);
         }
 
+        $byExtra = $result['by_extra'] ?? [];
+        if (!empty($byExtra)) {
+            $this->addBarChart(
+                $sheet,
+                $row + 3,
+                'توزیع فاقد عملکرد بر اساس گروه',
+                array_keys($byExtra),
+                ['تعداد' => array_values($byExtra)]
+            );
+        }
+
         return $this->streamExcel($spreadsheet, 'performance-card-no-performance.xlsx');
     }
 
@@ -554,9 +655,94 @@ class PerformanceCardExportController extends Controller
         ]);
     }
 
-    private function fmtCell(array $cell): string
+    /**
+     * Writes a small labeled data block starting at $startRow and attaches a native
+     * (clustered bar) chart anchored a couple of rows below it. Returns the row
+     * number after the chart, so callers can stack multiple charts vertically.
+     *
+     * @param array<string, array<int, int|float>> $series seriesName => values aligned with $labels
+     */
+    private function addBarChart(Worksheet $sheet, int $startRow, string $chartTitle, array $labels, array $series): int
     {
-        return "{$cell['all']} ({$cell[2]} / {$cell[1]} / {$cell[3]})";
+        $labels = array_values($labels);
+        if (empty($labels) || empty($series)) {
+            return $startRow;
+        }
+
+        $sheetTitle = $sheet->getTitle();
+
+        $sheet->getCell('A' . $startRow)->setValue('داده‌های نمودار: ' . $chartTitle);
+        $sheet->getStyle('A' . $startRow)->getFont()->setBold(true)->setSize(10);
+
+        $headerRow = $startRow + 1;
+        $sheet->getCell('A' . $headerRow)->setValue('برچسب');
+        $col = 2;
+        foreach (array_keys($series) as $seriesName) {
+            $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $headerRow)->setValue($seriesName);
+            $col++;
+        }
+        $this->styleHeader($sheet, $headerRow, 1 + count($series));
+
+        $dataStartRow = $headerRow + 1;
+        foreach ($labels as $i => $label) {
+            $r = $dataStartRow + $i;
+            $sheet->getCell('A' . $r)->setValue((string) $label);
+            $col = 2;
+            foreach ($series as $values) {
+                $values = array_values($values);
+                $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $r)->setValue($values[$i] ?? 0);
+                $col++;
+            }
+        }
+        $dataEndRow = $dataStartRow + count($labels) - 1;
+
+        $categories = [new DataSeriesValues(
+            DataSeriesValues::DATASERIES_TYPE_STRING,
+            "'{$sheetTitle}'!\$A\${$dataStartRow}:\$A\${$dataEndRow}",
+            null,
+            count($labels)
+        )];
+
+        $seriesLabels = [];
+        $dataSeriesValues = [];
+        $col = 2;
+        foreach (array_keys($series) as $seriesName) {
+            $colLetter = Coordinate::stringFromColumnIndex($col);
+            $seriesLabels[] = new DataSeriesValues(
+                DataSeriesValues::DATASERIES_TYPE_STRING,
+                "'{$sheetTitle}'!\${$colLetter}\${$headerRow}",
+                null,
+                1
+            );
+            $dataSeriesValues[] = new DataSeriesValues(
+                DataSeriesValues::DATASERIES_TYPE_NUMBER,
+                "'{$sheetTitle}'!\${$colLetter}\${$dataStartRow}:\${$colLetter}\${$dataEndRow}",
+                null,
+                count($labels)
+            );
+            $col++;
+        }
+
+        $dataSeries = new DataSeries(
+            DataSeries::TYPE_BARCHART,
+            DataSeries::GROUPING_CLUSTERED,
+            range(0, count($series) - 1),
+            $seriesLabels,
+            $categories,
+            $dataSeriesValues
+        );
+
+        $plotArea = new PlotArea(null, [$dataSeries]);
+        $legend   = count($series) > 1 ? new Legend(Legend::POSITION_BOTTOM, null, false) : null;
+        $title    = new Title($chartTitle);
+
+        $chart = new Chart('chart_' . $sheetTitle . '_' . $startRow, $title, $legend, $plotArea);
+        $chart->setTopLeftPosition('A' . ($dataEndRow + 2));
+        $chart->setBottomRightPosition(Coordinate::stringFromColumnIndex(9) . ($dataEndRow + 20));
+
+        $sheet->addChart($chart);
+
+        return $dataEndRow + 22;
     }
 
     private function jalali(string $date): string
@@ -567,7 +753,9 @@ class PerformanceCardExportController extends Controller
     private function streamExcel(Spreadsheet $spreadsheet, string $filename): Response
     {
         return response()->streamDownload(function () use ($spreadsheet) {
-            (new Xlsx($spreadsheet))->save('php://output');
+            $writer = new Xlsx($spreadsheet);
+            $writer->setIncludeCharts(true);
+            $writer->save('php://output');
         }, $filename, [
             'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition' => "attachment; filename=\"{$filename}\"",

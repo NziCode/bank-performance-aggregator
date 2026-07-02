@@ -81,6 +81,22 @@ class PerformanceReportService
         return (new Jalalian($year, 1, 1))->isLeapYear() ? 30 : 29;
     }
 
+    /**
+     * The equivalent-length period immediately preceding [$from, $to] — used for the
+     * period-over-period comparison badge (e.g. "12% higher than the previous period").
+     */
+    public static function previousPeriodRange(string $from, string $to): array
+    {
+        $fromDate = Carbon::parse($from);
+        $toDate   = Carbon::parse($to);
+        $days     = $fromDate->diffInDays($toDate) + 1;
+
+        return [
+            $fromDate->copy()->subDays($days)->toDateString(),
+            $fromDate->copy()->subDay()->toDateString(),
+        ];
+    }
+
     // ─── Detailed ──────────────────────────────────────────────────────────────
 
     public function detailed(
@@ -105,13 +121,22 @@ class PerformanceReportService
         string $from,
         string $to,
         bool $includeSubOffices = false,
-        array $serviceTypeIds = []
+        array $serviceTypeIds = [],
+        int $lowPerformanceThreshold = 5,
+        string $sortBy = 'total',
+        string $sortDir = 'desc'
     ): array {
         $records = $this->baseQuery($level, $entityId, $from, $to, $includeSubOffices, $serviceTypeIds)
             ->with(['employee', 'serviceType'])
             ->get();
 
-        return $this->buildSummaryResult($records, $serviceTypeIds);
+        return $this->buildSummaryResult($records, $serviceTypeIds, $lowPerformanceThreshold, $sortBy, $sortDir);
+    }
+
+    /** Lightweight record count for a scope/period — used for the period-over-period comparison badge. */
+    public function totalCount(string $level, string|int $entityId, string $from, string $to, array $serviceTypeIds = []): int
+    {
+        return $this->baseQuery($level, $entityId, $from, $to, false, $serviceTypeIds)->count();
     }
 
     // ─── Breakdown Summary (کل به جز) ─────────────────────────────────────────
@@ -122,7 +147,10 @@ class PerformanceReportService
         string $from,
         string $to,
         string $breakdownBy,
-        array $serviceTypeIds = []
+        array $serviceTypeIds = [],
+        int $lowPerformanceThreshold = 5,
+        string $sortBy = 'total',
+        string $sortDir = 'desc'
     ): array {
         $records = $this->hierarchicalQuery($level, $entityId, $from, $to, $serviceTypeIds)
             ->with(['employee', 'serviceType', 'branch', 'branchOffice.branch', 'zone'])
@@ -134,23 +162,27 @@ class PerformanceReportService
             ->groupBy(fn($r) => $this->resolveBreakdownKey($r, $breakdownBy))
             ->filter(fn($g, $k) => $k !== null);
 
-        $rows = $grouped->map(function ($group, $key) use ($serviceTypes, $breakdownBy) {
+        $rows = $grouped->map(function ($group, $key) use ($serviceTypes, $breakdownBy, $lowPerformanceThreshold) {
             $services = [];
             foreach ($serviceTypes as $type) {
                 $services[$type] = $this->statusBreakdown($group->where('serviceType.name', $type));
             }
-            return [
-                'key'         => $key,
-                'label'       => $this->resolveBreakdownLabel($key, $breakdownBy, $group->first()),
-                'services'    => $services,
-                'grand_total' => [
-                    self::STATUS_APPROVED => $group->where('validation_status_id', self::STATUS_APPROVED)->count(),
-                    self::STATUS_PENDING  => $group->where('validation_status_id', self::STATUS_PENDING)->count(),
-                    self::STATUS_REJECTED => $group->where('validation_status_id', self::STATUS_REJECTED)->count(),
-                    'all'                 => $group->count(),
-                ],
+            $grandTotal = [
+                self::STATUS_APPROVED => $group->where('validation_status_id', self::STATUS_APPROVED)->count(),
+                self::STATUS_PENDING  => $group->where('validation_status_id', self::STATUS_PENDING)->count(),
+                self::STATUS_REJECTED => $group->where('validation_status_id', self::STATUS_REJECTED)->count(),
+                'all'                 => $group->count(),
             ];
-        })->sortByDesc(fn($r) => $r['grand_total']['all'])->values();
+            return [
+                'key'             => $key,
+                'label'           => $this->resolveBreakdownLabel($key, $breakdownBy, $group->first()),
+                'services'        => $services,
+                'grand_total'     => $grandTotal,
+                'low_performance' => $grandTotal['all'] < $lowPerformanceThreshold,
+            ];
+        })->values()->toArray();
+
+        $rows = self::sortRows($rows, $sortBy, $sortDir, 'label', 'grand_total');
 
         $grandTotal = [
             self::STATUS_APPROVED => $records->where('validation_status_id', self::STATUS_APPROVED)->count(),
@@ -160,11 +192,12 @@ class PerformanceReportService
         ];
 
         return [
-            'service_types'   => $serviceTypes->toArray(),
-            'breakdown_by'    => $breakdownBy,
-            'breakdown_label' => self::breakdownLabels()[$breakdownBy] ?? $breakdownBy,
-            'rows'            => $rows->toArray(),
-            'grand_total'     => $grandTotal,
+            'service_types'      => $serviceTypes->toArray(),
+            'breakdown_by'       => $breakdownBy,
+            'breakdown_label'    => self::breakdownLabels()[$breakdownBy] ?? $breakdownBy,
+            'rows'               => $rows,
+            'grand_total'        => $grandTotal,
+            'low_performance_count' => count(array_filter($rows, fn($r) => $r['low_performance'])),
         ];
     }
 
@@ -270,8 +303,13 @@ class PerformanceReportService
 
     // ─── Helpers ───────────────────────────────────────────────────────────────
 
-    private function buildSummaryResult(Collection $records, array $serviceTypeIds = []): array
-    {
+    private function buildSummaryResult(
+        Collection $records,
+        array $serviceTypeIds = [],
+        int $lowPerformanceThreshold = 5,
+        string $sortBy = 'total',
+        string $sortDir = 'desc'
+    ): array {
         $serviceTypes = $this->resolveServiceTypes($serviceTypeIds);
 
         $totals = [];
@@ -286,32 +324,63 @@ class PerformanceReportService
             'all'                 => $records->count(),
         ];
 
-        $byEmployee = $records->groupBy('personnel_code')->map(function ($rows) use ($serviceTypes) {
+        $byEmployee = $records->groupBy('personnel_code')->map(function ($rows) use ($serviceTypes, $lowPerformanceThreshold) {
             $first    = $rows->first();
             $services = [];
             foreach ($serviceTypes as $type) {
                 $services[$type] = $this->statusBreakdown($rows->where('serviceType.name', $type));
             }
-            return [
-                'personnel_code' => $first->personnel_code,
-                'full_name'      => $first->employee?->full_name,
-                'workplace'      => $first->workplace_label,
-                'services'       => $services,
-                'total'          => [
-                    self::STATUS_APPROVED => $rows->where('validation_status_id', self::STATUS_APPROVED)->count(),
-                    self::STATUS_PENDING  => $rows->where('validation_status_id', self::STATUS_PENDING)->count(),
-                    self::STATUS_REJECTED => $rows->where('validation_status_id', self::STATUS_REJECTED)->count(),
-                    'all'                 => $rows->count(),
-                ],
+            $total = [
+                self::STATUS_APPROVED => $rows->where('validation_status_id', self::STATUS_APPROVED)->count(),
+                self::STATUS_PENDING  => $rows->where('validation_status_id', self::STATUS_PENDING)->count(),
+                self::STATUS_REJECTED => $rows->where('validation_status_id', self::STATUS_REJECTED)->count(),
+                'all'                 => $rows->count(),
             ];
-        })->sortByDesc(fn($r) => $r['total']['all'])->values();
+            return [
+                'personnel_code'  => $first->personnel_code,
+                'full_name'       => $first->employee?->full_name,
+                'workplace'       => $first->workplace_label,
+                'services'        => $services,
+                'total'           => $total,
+                'low_performance' => $total['all'] < $lowPerformanceThreshold,
+            ];
+        })->values()->toArray();
+
+        $byEmployee = self::sortRows($byEmployee, $sortBy, $sortDir, 'full_name', 'total');
 
         return [
-            'service_types' => $serviceTypes->toArray(),
-            'totals'        => $totals,
-            'grand_total'   => $grandTotal,
-            'by_employee'   => $byEmployee,
+            'service_types'         => $serviceTypes->toArray(),
+            'totals'                => $totals,
+            'grand_total'           => $grandTotal,
+            'by_employee'           => $byEmployee,
+            'low_performance_count' => count(array_filter($byEmployee, fn($r) => $r['low_performance'])),
         ];
+    }
+
+    /**
+     * Sort a flat array of report rows by entity name or by one of the status metrics.
+     * Shared by the by-employee list (summary) and the breakdown rows list.
+     */
+    private static function sortRows(array $rows, string $sortBy, string $sortDir, string $nameKey, string $totalKey): array
+    {
+        if (empty($rows)) {
+            return $rows;
+        }
+
+        $direction = strtolower($sortDir) === 'asc' ? SORT_ASC : SORT_DESC;
+
+        $column = match ($sortBy) {
+            'name'     => array_map(fn($r) => (string) ($r[$nameKey] ?? ''), $rows),
+            'approved' => array_map(fn($r) => $r[$totalKey][self::STATUS_APPROVED], $rows),
+            'pending'  => array_map(fn($r) => $r[$totalKey][self::STATUS_PENDING], $rows),
+            'rejected' => array_map(fn($r) => $r[$totalKey][self::STATUS_REJECTED], $rows),
+            default    => array_map(fn($r) => $r[$totalKey]['all'], $rows), // 'total'
+        };
+
+        $sortFlags = $sortBy === 'name' ? SORT_STRING : SORT_NUMERIC;
+        array_multisort($column, $direction, $sortFlags, $rows);
+
+        return $rows;
     }
 
     private function resolveBreakdownKey($record, string $breakdownBy): mixed
@@ -354,6 +423,41 @@ class PerformanceReportService
         return $serviceTypeIds
             ? ServiceType::whereIn('id', $serviceTypeIds)->pluck('name')
             : ServiceType::orderBy('id')->pluck('name');
+    }
+
+    // ─── Chart data (pure reshaping of already-computed results — no new queries) ──
+
+    /** label => total, for a service-type composition donut. */
+    public static function chartServiceTypeComposition(array $totals): array
+    {
+        $out = [];
+        foreach ($totals as $type => $cell) {
+            $out[$type] = $cell['all'];
+        }
+        return $out;
+    }
+
+    /** Top-N rows reshaped into ['label' => ..., 'approved' => ..., 'pending' => ..., 'rejected' => ...] for a stacked bar. */
+    public static function chartTopRows(array $rows, string $nameKey, string $totalKey, int $limit = 10): array
+    {
+        $slice = array_slice($rows, 0, $limit);
+
+        return array_map(fn($r) => [
+            'label'    => (string) ($r[$nameKey] ?? '—'),
+            'approved' => $r[$totalKey][self::STATUS_APPROVED],
+            'pending'  => $r[$totalKey][self::STATUS_PENDING],
+            'rejected' => $r[$totalKey][self::STATUS_REJECTED],
+        ], $slice);
+    }
+
+    /** Status composition of a raw record collection (used by the "detailed" report chart). */
+    public static function statusDistribution(Collection $records): array
+    {
+        return [
+            'تایید'  => $records->where('validation_status_id', self::STATUS_APPROVED)->count(),
+            'انتظار' => $records->where('validation_status_id', self::STATUS_PENDING)->count(),
+            'رد'     => $records->where('validation_status_id', self::STATUS_REJECTED)->count(),
+        ];
     }
 
     // ─── No Performance Dashboard ─────────────────────────────────────────────
@@ -476,12 +580,29 @@ class PerformanceReportService
         array $serviceTypeIds = [],
         string $checkBy = 'employee'
     ): array {
-        return match ($checkBy) {
+        $result = match ($checkBy) {
             'branch'        => $this->noPerformanceBranches($level, $entityId, $from, $to, $serviceTypeIds),
             'branch_office' => $this->noPerformanceBranchOffices($level, $entityId, $from, $to, $serviceTypeIds),
             'zone'          => $this->noPerformanceZones($from, $to, $serviceTypeIds),
             default         => $this->noPerformanceEmployees($level, $entityId, $from, $to, $serviceTypeIds),
         };
+
+        $result['by_extra'] = $this->noPerformanceExtraDistribution($result['entities'] ?? []);
+
+        return $result;
+    }
+
+    /** Distribution of no-performance entities by their parent group ("extra" column) — chart data for the no-performance report. */
+    private function noPerformanceExtraDistribution(array $entities): array
+    {
+        $map = [];
+        foreach ($entities as $entity) {
+            $key = trim((string) ($entity['extra'] ?? '')) ?: '—';
+            $map[$key] = ($map[$key] ?? 0) + 1;
+        }
+        arsort($map);
+
+        return array_slice($map, 0, 12, true);
     }
 
     private function noPerformanceEmployees(string $level, $entityId, string $from, string $to, array $serviceTypeIds): array
@@ -699,6 +820,34 @@ class PerformanceReportService
             self::LEVEL_STAFF         => ['employee' => 'کارمند'],
             default                   => [],
         };
+    }
+
+    public static function reportTypeLabels(): array
+    {
+        return [
+            'summary'        => 'گزارش عملکرد کلی',
+            'detailed'       => 'گزارش جزئی (ریز رکوردها)',
+            'no_performance' => 'گزارش فاقد عملکرد',
+        ];
+    }
+
+    public static function sortByLabels(): array
+    {
+        return [
+            'total'    => 'مجموع کل',
+            'approved' => 'تایید شده',
+            'pending'  => 'در انتظار',
+            'rejected' => 'رد شده',
+            'name'     => 'نام موجودیت',
+        ];
+    }
+
+    public static function sortDirLabels(): array
+    {
+        return [
+            'desc' => 'بیشترین به کمترین',
+            'asc'  => 'کمترین به بیشترین',
+        ];
     }
 
     public static function statusLabels(): array

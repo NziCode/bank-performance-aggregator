@@ -8,7 +8,7 @@
                 <x-filament::button type="submit" icon="heroicon-o-chart-bar">
                     نمایش گزارش
                 </x-filament::button>
-                @if($summaryResult || $detailedResult || $breakdownResult)
+                @if($summaryResult || $detailedResult || $breakdownResult || $noPerformanceResult)
                     <x-filament::button wire:click="exportExcel" color="success" icon="heroicon-o-table-cells">
                         خروجی Excel
                     </x-filament::button>
@@ -28,7 +28,7 @@
         {{-- ─── نوار خلاصه سرصفحه ──────────────────────────────────────────── --}}
         @php
             $gt = $summaryResult['grand_total']
-                ?? ($breakdownResult ? $breakdownResult[0]['grand_total'] : null)
+                ?? ($breakdownResult ? $breakdownResult['grand_total'] : null)
                 ?? ($noPerformanceResult ? ['all' => $noPerformanceResult['count'], 2 => null, 1 => null, 3 => null] : null)
                 ?? ['all' => count($detailedResult ?? []), 2 => null, 1 => null, 3 => null];
             $npCheckBy = $noPerformanceResult['check_by'] ?? 'employee';
@@ -43,11 +43,17 @@
             <div style="font-size:17px;font-weight:bold;color:#1e3a5f;margin-bottom:6px;">
                 {{ $entityLabel }}
                 @if($breakdownResult)
-                    — ریزبندی: {{ collect($breakdownResult)->pluck('breakdown_label')->join('، ') }}
+                    — ریزبندی: {{ $breakdownResult['breakdown_label'] }}
                 @endif
             </div>
             <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">
                 {{ $periodLabel }} &nbsp;|&nbsp; {{ $fromLabel }} تا {{ $toLabel }}
+                @if($deltaPercent !== null)
+                    &nbsp;|&nbsp;
+                    <span style="background:{{ $deltaDirection === 'up' ? '#dcfce7' : '#fee2e2' }};color:{{ $deltaDirection === 'up' ? '#15803d' : '#b91c1c' }};padding:2px 8px;border-radius:99px;font-weight:600;">
+                        {{ $deltaDirection === 'up' ? '▲' : '▼' }} {{ abs($deltaPercent) }}٪ نسبت به دوره قبل ({{ $previousPeriodLabel }})
+                    </span>
+                @endif
             </div>
             @if($gt['all'] !== null)
                 <div style="display:flex;gap:20px;font-size:13px;flex-wrap:wrap;">
@@ -64,11 +70,44 @@
                 </div>
             @endif
         </div>
+
+        {{-- ─── کارت‌های شاخص کلیدی (KPI) ─────────────────────────────────── --}}
+        @if(!$noPerformanceResult && $gt[2] !== null)
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px;">
+                <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);padding:16px;border-top:4px solid #1e3a5f;">
+                    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">مجموع کل رکوردها</div>
+                    <div style="font-size:22px;font-weight:bold;color:#1e3a5f;">{{ $gt['all'] }}</div>
+                </div>
+                <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);padding:16px;border-top:4px solid #16a34a;">
+                    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">نرخ تایید</div>
+                    <div style="font-size:22px;font-weight:bold;color:#16a34a;">{{ $approvalRate !== null ? $approvalRate . '٪' : '—' }}</div>
+                </div>
+                <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);padding:16px;border-top:4px solid #ca8a04;">
+                    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">در انتظار بررسی</div>
+                    <div style="font-size:22px;font-weight:bold;color:#ca8a04;">{{ $gt[1] }}</div>
+                </div>
+                <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);padding:16px;border-top:4px solid #dc2626;">
+                    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">موارد کم‌عملکرد</div>
+                    <div style="font-size:22px;font-weight:bold;color:#dc2626;">{{ $lowPerformanceCount ?? 0 }}</div>
+                </div>
+            </div>
+        @endif
+    @endif
+
+    {{-- ─── نمودارها ───────────────────────────────────────────────────────── --}}
+    @if(!empty($chartsSvg))
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:16px;">
+            @foreach($chartsSvg as $svg)
+                <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);padding:16px;overflow-x:auto;">
+                    {!! $svg !!}
+                </div>
+            @endforeach
+        </div>
     @endif
 
     {{-- ─── جدول ریزبندی (breakdown) ─────────────────────────────────────── --}}
     @if($breakdownResult)
-        @foreach($breakdownResult as $bResult)
+        @php $bResult = $breakdownResult; @endphp
         <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px;overflow:hidden;">
             <div style="padding:10px 20px;border-bottom:1px solid #f3f4f6;font-weight:600;color:#374151;font-size:13px;">
                 آمار به تفکیک {{ $bResult['breakdown_label'] }}
@@ -78,6 +117,7 @@
                     <thead>
                         <tr style="background:#1e3a5f;color:#fff;">
                             <th rowspan="2" style="padding:10px 14px;text-align:right;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">{{ $bResult['breakdown_label'] }}</th>
+                            <th rowspan="2" style="padding:10px 14px;text-align:center;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">کم‌عملکرد</th>
                             @foreach($bResult['service_types'] as $type)
                                 <th colspan="4" style="padding:6px 12px;text-align:center;white-space:nowrap;border-left:1px solid #2d5a8e;border-bottom:1px solid #2d5a8e;">{{ $type }}</th>
                             @endforeach
@@ -100,6 +140,13 @@
                         @foreach($bResult['rows'] as $idx => $row)
                             <tr style="background:{{ $idx % 2 === 0 ? '#f9fafb' : '#fff' }};border-bottom:1px solid #f3f4f6;">
                                 <td style="padding:9px 14px;font-weight:500;">{{ $row['label'] }}</td>
+                                <td style="padding:9px 14px;text-align:center;">
+                                    @if($row['low_performance'])
+                                        <span style="background:#fee2e2;color:#b91c1c;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:600;">کم‌عملکرد</span>
+                                    @else
+                                        <span style="color:#9ca3af;">—</span>
+                                    @endif
+                                </td>
                                 @foreach($bResult['service_types'] as $type)
                                     @php $cell = $row['services'][$type]; @endphp
                                     <td style="padding:9px 8px;text-align:center;font-weight:bold;">{{ $cell['all'] }}</td>
@@ -115,7 +162,7 @@
                         @endforeach
                         {{-- ردیف جمع کل --}}
                         <tr style="background:#eff6ff;font-weight:bold;border-top:2px solid #bfdbfe;">
-                            <td style="padding:10px 14px;">جمع کل</td>
+                            <td style="padding:10px 14px;" colspan="2">جمع کل</td>
                             @foreach($bResult['service_types'] as $type)
                                 @php
                                     $total = ['all' => 0, 2 => 0, 1 => 0, 3 => 0];
@@ -138,7 +185,6 @@
                 </table>
             </div>
         </div>
-        @endforeach
     @endif
 
     {{-- ─── گزارش کلی (summary) ──────────────────────────────────────────── --}}
@@ -196,6 +242,7 @@
                                 <th rowspan="2" style="padding:10px 12px;text-align:right;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">کد پرسنلی</th>
                                 <th rowspan="2" style="padding:10px 12px;text-align:right;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">نام همکار</th>
                                 <th rowspan="2" style="padding:10px 12px;text-align:right;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">محل خدمت</th>
+                                <th rowspan="2" style="padding:10px 12px;text-align:center;white-space:nowrap;vertical-align:middle;border-left:1px solid #2d5a8e;">کم‌عملکرد</th>
                                 @foreach($summaryResult['service_types'] as $type)
                                     <th colspan="4" style="padding:6px 12px;text-align:center;white-space:nowrap;border-left:1px solid #2d5a8e;border-bottom:1px solid #2d5a8e;">{{ $type }}</th>
                                 @endforeach
@@ -220,6 +267,13 @@
                                     <td style="padding:9px 12px;">{{ $row['personnel_code'] }}</td>
                                     <td style="padding:9px 12px;font-weight:500;">{{ $row['full_name'] }}</td>
                                     <td style="padding:9px 12px;color:#6b7280;font-size:11px;">{{ $row['workplace'] }}</td>
+                                    <td style="padding:9px 12px;text-align:center;">
+                                        @if($row['low_performance'])
+                                            <span style="background:#fee2e2;color:#b91c1c;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:600;">کم‌عملکرد</span>
+                                        @else
+                                            <span style="color:#9ca3af;">—</span>
+                                        @endif
+                                    </td>
                                     @foreach($summaryResult['service_types'] as $type)
                                         @php $cell = $row['services'][$type]; @endphp
                                         <td style="padding:9px 8px;text-align:center;font-weight:bold;">{{ $cell['all'] }}</td>

@@ -113,7 +113,17 @@
         <span style="margin-right:16px;" class="approved">✓ تایید: <strong>{{ $result['grand_total'][2] }}</strong></span>
         <span style="margin-right:16px;" class="pending">⏳ انتظار: <strong>{{ $result['grand_total'][1] }}</strong></span>
         <span style="margin-right:16px;" class="rejected">✗ رد: <strong>{{ $result['grand_total'][3] }}</strong></span>
+        <span style="margin-right:16px;" class="rejected">⚑ کم‌عملکرد: <strong>{{ $result['low_performance_count'] }}</strong></span>
     </div>
+
+    {{-- نمودارها --}}
+    <div class="section-title">نمودار عملکرد</div>
+    <table style="border:none;margin-bottom:12px;">
+        <tr>
+            <td style="border:none;text-align:center;width:50%;padding:0;">{!! $chartSvg['composition'] !!}</td>
+            <td style="border:none;text-align:center;width:50%;padding:0;">{!! $chartSvg['top_entities'] !!}</td>
+        </tr>
+    </table>
 
     {{-- جدول جمع به تفکیک نوع خدمت --}}
     <div class="section-title">جمع کل به تفکیک نوع خدمت</div>
@@ -157,6 +167,7 @@
                     <th class="col-name" rowspan="2" style="vertical-align:middle;">کد پرسنلی</th>
                     <th class="col-name" rowspan="2" style="vertical-align:middle;">نام همکار</th>
                     <th class="col-name" rowspan="2" style="vertical-align:middle;">محل خدمت</th>
+                    <th rowspan="2" style="vertical-align:middle;">کم‌عملکرد</th>
                     @foreach($result['service_types'] as $type)
                         <th colspan="4" style="border-bottom:1px solid #2d5a8e;">{{ $type }}</th>
                     @endforeach
@@ -181,6 +192,13 @@
                         <td class="col-name">{{ $emp['personnel_code'] }}</td>
                         <td class="col-name" style="font-weight:500;">{{ $emp['full_name'] }}</td>
                         <td class="col-name" style="color:#6b7280;font-size:7px;">{{ $emp['workplace'] }}</td>
+                        <td>
+                            @if($emp['low_performance'])
+                                <span class="rejected" style="font-weight:600;">کم‌عملکرد</span>
+                            @else
+                                —
+                            @endif
+                        </td>
                         @foreach($result['service_types'] as $type)
                             @php $cell = $emp['services'][$type]; @endphp
                             <td class="num-all">{{ $cell['all'] }}</td>
